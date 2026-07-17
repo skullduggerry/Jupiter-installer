@@ -1,25 +1,32 @@
-Installer Script Version 1.0
+# Jupiter Installer
 
-Installer for https://codeberg.org/skullduggery/Jupiter-dotfiles, as well as my own preferred system setup on Arch linux
+Installer for [Jupiter-dotfiles](https://codeberg.org/skullduggery/Jupiter-dotfiles), as well as my own preferred setup for Arch Linux.
 
-Installer.sh runs the subscripts, letting you decide which ones to run during your system install.
-Simply clone the repository or run it using curl (TODO).
+`installer.sh` runs the Phases/Scrips as detailed below,also letting you choose which ones to run during or install.
 
-USAGE:
-Run the two commands, as provided
-# From the Arch ISO, as root: 
+## Usage
+
+Clone the repo manually, or run it via curl. Using curl, run the two commands below in order — once from the Arch ISO, once after reboot.
+
+```bash
+# From the Arch ISO, as root:
 curl -fsSL https://codeberg.org/skullduggery/Jupiter-installer/raw/branch/main/bootstrap.sh | bash -s -- --only 1,2
 
 # After reboot, as your normal user:
 curl -fsSL https://codeberg.org/skullduggery/Jupiter-installer/raw/branch/main/bootstrap.sh | bash -s -- --only 3,4
+```
 
+## Philosophy
 
-The main concept is customization. Both the dotfiles and installer are intended to be forked from the main branch and adatped to the users needs. This could entail adding programs to the user-defined package list, configuring the dotfiles or majorly changing the setup steps. It is recommended to keep installer-dependent files unchanged to avoid merge/upstream conflicts unless you know what you are doing.
+The core idea is **customization**. Both the installer and the dotfiles are meant to be forked from `main` and adapted to your own needs — adding packages to the user-defined list, tweaking dotfiles, or changing setup steps entirely. You simply modify the links in the installation files to be your fork. This can be done post or pre-install, assuming you have a system you can edit the your fork with.
 
-Phase 1: does the actual system installation, similar to archinstall. Does drive configuration, driver setup, user account creation etc. can be skipped in favour of manual installation or archinstall
+It's recommended to leave installer-internal files unchanged unless you know what you're doing, to avoid merge conflicts when pulling upstream updates.
 
-Phase 2: Installs all components (such as hyprland or quickshell) as well as recommended programs such as neovim
+## Phases
 
-Phase 3: Installs user-defined packages, such as steam. These can be defined in pacman.txt and AUR.txt
-
-Phase 4: sets up the dotfiles. Pulls them from the main branch (Jupiter-dotfiles) by default.
+| Phase | Description |
+|---|---|
+| **1** | system installation — drive configuration, driver setup, user account creation. Similar to `archinstall`. Can be skipped in favor of manual installation or `archinstall` itself. |
+| **2** | Installs core components (Hyprland, Quickshell) and recommended programs (Neovim, etc.). |
+| **3** | Installs user-defined packages (e.g. Steam), defined in `pacman.txt` and `AUR.txt`. |
+| **4** | Sets up dotfiles — pulls from [Jupiter-dotfiles](https://codeberg.org/skullduggery/Jupiter-dotfiles) `main` by default. |
