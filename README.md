@@ -10,10 +10,10 @@ Clone the repo manually, or run it via curl. Using curl, run the two commands be
 
 
 # From the Arch ISO, as root:
-````bash
+```bash
 curl -fsSL https://codeberg.org/skullduggery/Jupiter-installer/raw/branch/main/bootstrap.sh | bash -s -- --only 1,2
-````
-````bash
+```
+```bash
 # After reboot, as your normal user:
 curl -fsSL https://codeberg.org/skullduggery/Jupiter-installer/raw/branch/main/bootstrap.sh | bash -s -- --only 3,4
 ```
