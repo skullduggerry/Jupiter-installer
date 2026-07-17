@@ -13,4 +13,4 @@ else
 fi
 
 cd "$INSTALLER_DIR"
-exec ./installer.bash "$@"
+exec ./installer.sh "$@"
