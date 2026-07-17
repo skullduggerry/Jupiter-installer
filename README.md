@@ -20,7 +20,7 @@ curl -fsSL https://codeberg.org/skullduggery/Jupiter-installer/raw/branch/main/b
 
 ## Philosophy
 
-The core idea is **customization**. Both the installer and the dotfiles are meant to be forked from `main` and adapted to your own needs — adding packages to the user-defined list, tweaking dotfiles, or changing setup steps entirely. You simply modify the links in the installation files to be your fork. This can be done post or pre-install, assuming you have a system you can edit the your fork with.
+The core idea is **customization**. Both the installer and the dotfiles are meant to be forked from `main` and adapted to your own needs — adding packages to the user-defined list, tweaking dotfiles, or changing setup steps entirely. You simply modify the links in the config.sh and bootstrap.sh to be your fork. This can be done post or pre-install, assuming you have a system you can edit the your fork with.
 
 It's recommended to leave installer-internal files unchanged unless you know what you're doing, to avoid merge conflicts when pulling upstream updates.
 

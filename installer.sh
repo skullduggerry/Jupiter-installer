@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/config.sh"
 
 COLOR_RESET='\033[0m'
 COLOR_GREEN='\033[0;32m'
@@ -47,8 +48,6 @@ run_phase() {
         exit 1
     fi
 
-    # Sanity check: phases 1-2 expect to run as root (live ISO),
-    # phases 3-4 expect to run as a normal user (paru refuses root).
     if [[ "$n" -le 2 && "$EUID" -ne 0 ]]; then
         log_error "Phase $n must be run as root (from the Arch ISO)."
         exit 1
@@ -100,7 +99,6 @@ prompt_phase_selection() {
     done
 }
 
-# --- Argument parsing ---
 SELECTED_PHASES=()
 
 if [[ $# -eq 0 ]]; then

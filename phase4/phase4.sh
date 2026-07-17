@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DOTFILES_REPO_HTTPS="https://codeberg.org/skullduggery/Jupiter-dotfiles.git"
-DOTFILES_REPO_SSH="git@codeberg.org:skullduggery/Jupiter-dotfiles.git"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../config.sh"
 
 REPO_NAME="$(basename "$DOTFILES_REPO_HTTPS" .git)"
 DOTFILES_DIR="$HOME/$REPO_NAME"
