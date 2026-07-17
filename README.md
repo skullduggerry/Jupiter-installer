@@ -9,8 +9,8 @@ Installer for [Jupiter-dotfiles](https://codeberg.org/skullduggery/Jupiter-dotfi
 Clone the repo manually, or run it via curl. Using curl, run the two commands below in order — once from the Arch ISO, once after reboot.
 
 
-# From the Arch ISO, as root:
 ```bash
+# From the Arch ISO, as root
 curl -fsSL https://codeberg.org/skullduggery/Jupiter-installer/raw/branch/main/bootstrap.sh | bash -s -- --only 1,2
 ```
 ```bash
