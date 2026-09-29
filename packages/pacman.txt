@@ -1,0 +1,3 @@
+# Phase 3: your own packages from the official repositories, e.g. steam
+# (enable [multilib] in /etc/pacman.conf first). One per line, `#` starts
+# a comment.

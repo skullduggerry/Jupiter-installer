@@ -1,0 +1,5 @@
+# Phase 3: packages from the AUR, installed with paru after you review each
+# PKGBUILD. One per line, `#` starts a comment.
+
+# Renders the dotfiles' colours from the theme (.config/wallust/apply.sh).
+wallust

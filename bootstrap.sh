@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
+# Fetch this installer, or update it, and run it: bootstrap.sh [phase ...]
 set -euo pipefail
 
-: "${INSTALLER_REPO:=https://codeberg.org/skullduggery/Jupiter-installer.git}"
+repo=${INSTALLER_REPO:-https://codeberg.org/skullduggery/Jupiter-installer.git}
+dir=$HOME/$(basename "$repo" .git)
 
-REPO_NAME="$(basename "$INSTALLER_REPO" .git)"
-INSTALLER_DIR="$HOME/$REPO_NAME"
+# The live ISO has Python, but not git.
+command -v git >/dev/null || pacman -Sy --noconfirm git
 
-if [[ -d "$INSTALLER_DIR/.git" ]]; then
-    git -C "$INSTALLER_DIR" pull
+if [[ -d $dir/.git ]]; then
+    git -C "$dir" pull --ff-only
 else
-    git clone "$INSTALLER_REPO" "$INSTALLER_DIR"
+    git clone "$repo" "$dir"
 fi
-
-cd "$INSTALLER_DIR"
-exec ./installer.sh "$@"
+cd "$dir"
+# Piped from curl, stdin is the script: read the answers from the terminal.
+exec python3 -m jupiter "$@" </dev/tty

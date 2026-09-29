@@ -1,34 +1,42 @@
 # Jupiter Installer
 
-Installer for [Jupiter-dotfiles](https://codeberg.org/skullduggery/Jupiter-dotfiles), as well as my own preferred setup for Arch Linux.
+Installer for [Jupiter-dotfiles](https://codeberg.org/skullduggery/Jupiter-dotfiles), as well as my own preferred setup for Arch Linux: Hyprland and Quickshell on top of a plain Arch install.
 
-`installer.sh` runs the Phases/Scrips as detailed below,also letting you choose which ones to run during or install.
+It runs in four phases, written in Python with nothing beyond its standard library.
 
 ## Usage
 
-Clone the repo manually, or run it via curl. Using curl, run the two commands below in order — once from the Arch ISO, once after reboot.
-
+Boot the [Arch ISO](https://archlinux.org/download/) in UEFI mode and connect to the internet (`iwctl` for Wi-Fi). If your keyboard is not US, load its layout with `loadkeys` first, so your passwords are typed the way you will type them later. Then, as root:
 
 ```bash
-# From the Arch ISO, as root
-curl -fsSL https://codeberg.org/skullduggery/Jupiter-installer/raw/branch/main/bootstrap.sh | bash -s -- --only 1,2
+curl -fsSL https://codeberg.org/skullduggery/Jupiter-installer/raw/branch/main/bootstrap.sh | bash
 ```
+
+This runs phases 1 and 2. Reboot, log in as the user phase 1 created and run the copy of the installer it left in your home, which updates itself and runs phases 3 and 4:
+
 ```bash
-# After reboot, as your normal user:
-curl -fsSL https://codeberg.org/skullduggery/Jupiter-installer/raw/branch/main/bootstrap.sh | bash -s -- --only 3,4
+~/Jupiter-installer/bootstrap.sh
 ```
 
-## Philosophy
-
-The core concept is customization. Both the installer and the dotfiles are meant to be forked from `main` and adapted to your own needs - adding packages to the user-defined list, tweaking dotfiles, or changing setup steps entirely. You simply modify the links in the config.sh and bootstrap.sh to be your fork, this can be done post or pre-install, assuming you have a system you can edit the your fork with.
-
-It's recommended to leave installer-internal files unchanged unless you know what you're doing, to avoid merge conflicts when pulling upstream updates.
+Any phase can be run on its own later, e.g. `~/Jupiter-installer/bootstrap.sh 4` to update the dotfiles. In a clone, `python3 -m jupiter [phase ...]` runs phases without updating first.
 
 ## Phases
 
 | Phase | Description |
 |---|---|
-| **1** | system installation — drive configuration, driver setup, user account creation. Similar to `archinstall`. Can be skipped in favor of manual installation or `archinstall` itself. |
-| **2** | Installs core components (Hyprland, Quickshell) and recommended programs (Neovim, etc.). |
-| **3** | Installs user-defined packages (e.g. Steam), defined in `pacman.txt` and `AUR.txt`. |
-| **4** | Sets up dotfiles — pulls from [Jupiter-dotfiles](https://codeberg.org/skullduggery/Jupiter-dotfiles) `main` by default. |
+| **1** | The base system, from the live ISO. Erases the disk you pick and follows the Arch Installation guide with archinstall's defaults: GPT with a 1 GiB EFI system partition at `/boot`, Btrfs with `@`, `@home`, `@log` and `@pkg` subvolumes (zstd compressed), swap on zram, systemd-boot, NetworkManager, CPU microcode, graphics drivers for the GPUs it finds (`nvidia-open` and `libva-nvidia-driver` for NVIDIA Turing and newer, plus the session variables Hyprland's wiki asks for when that is the only GPU) and your user with sudo. Skip it if you install Arch by hand or with `archinstall`. |
+| **2** | The desktop, `packages/core.txt`: Hyprland (started through uwsm), Quickshell, PipeWire, greetd and the apps the dotfiles use. Enables NetworkManager, Bluetooth, power-profiles-daemon and the polkit agent. From the ISO it installs into `/mnt`, on an installed system through sudo. |
+| **3** | Your own packages: `packages/pacman.txt` with pacman and `packages/aur.txt` with paru, which is built first if it is missing. paru shows every PKGBUILD for review before building it. `aur.txt` starts with `wallust`, which the dotfiles' theming needs. |
+| **4** | The dotfiles: clones them into your home and links every folder of their `.config/` into `~/.config/` and `.zshrc` into `~`, moving whatever was in the way to `~/.dotfiles-backup/<time>/`. Then masks other notification daemons, renders the theme, installs the login screen, enables greetd unless another display manager is enabled, and makes zsh your login shell. Safe to run again. |
+
+A package that fails to install in phases 2 and 3, because it left the repositories or its AUR build broke, is skipped instead of stopping the install. The installer names it when it happens and again at the end, so you can install it later. Building paru takes about 4 GB of memory, swap included, so on a machine with less, phase 3 skips paru and the AUR packages.
+
+## Philosophy
+
+The core concept is customization. Both the installer and the dotfiles are meant to be forked from `main` and adapted to your own needs - adding packages to the user-defined lists, tweaking dotfiles, or changing setup steps entirely. To install from your forks, change the URL in `bootstrap.sh` and the two in `jupiter/config.py`, or set `INSTALLER_REPO`, `DOTFILES_REPO` and `DOTFILES_PUSH_URL` in the environment. Phase 4 clones the dotfiles over HTTPS, which needs no keys, and pushes them over SSH.
+
+It's recommended to leave installer-internal files (`jupiter/`, except `config.py`) unchanged unless you know what you're doing, to avoid merge conflicts when pulling upstream updates.
+
+## Development
+
+`python3 -m unittest` runs phases 2 to 4 against stand-in commands in a throwaway home, broken packages included, checks the drivers phase 1 picks for Intel, AMD, NVIDIA, hybrid and virtual machines, and that every official package the installer names exists.
