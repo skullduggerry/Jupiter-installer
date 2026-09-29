@@ -3,7 +3,8 @@
 
 # Renders the dotfiles' colours from the theme (.config/wallust/apply.sh).
 wallust
-onlyoffice
+onlyoffice-bin
 brave-origin-bin
 claude-desktop
-vesktop
+vesktop-bin
+
