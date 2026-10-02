@@ -39,6 +39,8 @@ wf-recorder
 zenity
 python
 lua
+fprintd
+libfprint
 
 # The apps the keybinds open.
 kitty
