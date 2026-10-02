@@ -13,8 +13,6 @@ xdg-desktop-portal-hyprland
 xdg-desktop-portal-gtk
 gnome-keyring
 greetd
-fprintd
-libfprint
 
 # What the shell reads and drives. nm-applet and blueman-applet stay running
 # for Wi-Fi passwords and Bluetooth pairing; secret-tool (libsecret) keeps the
@@ -41,6 +39,7 @@ python
 lua
 fprintd
 libfprint
+adw-gtk-theme
 
 # The apps the keybinds open.
 kitty
