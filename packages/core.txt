@@ -15,13 +15,15 @@ gnome-keyring
 greetd
 
 # What the shell reads and drives. nm-applet and blueman-applet stay running
-# for Wi-Fi passwords and Bluetooth pairing; secret-tool (libsecret) keeps the
-# calendar's password.
+# for Wi-Fi passwords and Bluetooth pairing; pavucontrol is the Audio panel's
+# full app; secret-tool (libsecret) keeps the calendar's password; qalc
+# (libqalculate) is the launcher's calculator.
 pipewire
 pipewire-pulse
 wireplumber
 networkmanager
 network-manager-applet
+pavucontrol
 bluez
 blueman
 upower
@@ -29,6 +31,7 @@ power-profiles-daemon
 brightnessctl
 libnotify
 libsecret
+libqalculate
 xdg-utils
 xdg-user-dirs
 cliphist
