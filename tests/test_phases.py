@@ -23,8 +23,13 @@ echo "${0##*/} $*" >> "$CALLS"
 for arg; do [ "$arg" = "$BROKEN" ] && exit 1; done
 exit 0
 """
+# git clone URL DIR, leaving a PKGBUILD in DIR.
+CLONE = RECORD.replace(
+    "exit 0\n", 'echo "pkgname=paru" > "$3/PKGBUILD"\nexit 0\n'
+)
 PUSH_URL = "git@example.org:dotfiles.git"
 INSTALL = "sudo pacman -S --needed --noconfirm"
+USER_UNITS = "hyprpolkitagent gcr-ssh-agent.socket"
 
 
 def executable(path: Path, text: str) -> None:
@@ -67,12 +72,13 @@ class Phases(unittest.TestCase):
             "DOTFILES_PUSH_URL": PUSH_URL,
         }
 
-    def jupiter(self, phase: str) -> list[str]:
+    def jupiter(self, phase: str, answers: str = "") -> list[str]:
         self.calls.write_text("")
         self.output = subprocess.run(
             [sys.executable, "-m", "jupiter", phase],
             cwd=INSTALLER_DIR,
             env=self.env,
+            input=answers,
             check=True,
             capture_output=True,
             text=True,
@@ -88,7 +94,7 @@ class Phases(unittest.TestCase):
                 "sudo pacman -Syu --noconfirm",
                 f"{INSTALL} {core}",
                 f"sudo systemctl enable {services}",
-                "sudo systemctl --global enable hyprpolkitagent",
+                f"sudo systemctl --global enable {USER_UNITS}",
             ],
         )
 
@@ -103,7 +109,7 @@ class Phases(unittest.TestCase):
                 f"{INSTALL} {' '.join(core)}",
                 *(f"{INSTALL} {name}" for name in core),
                 "sudo systemctl enable NetworkManager power-profiles-daemon",
-                "sudo systemctl --global enable hyprpolkitagent",
+                f"sudo systemctl --global enable {USER_UNITS}",
             ],
         )
         self.assertIn("Failed to install, skipping: bluez", self.output)
@@ -132,16 +138,28 @@ class Phases(unittest.TestCase):
         )
         self.assertIn(f"Failed to install and skipped: {broken}", self.output)
 
+    def without_paru(self) -> None:
+        (self.bin / "paru").unlink()
+        executable(self.bin / "git", CLONE)
+        executable(self.bin / "makepkg", RECORD)
+        self.env["PATH"] = str(self.bin)
+
     @unittest.skipUnless(packages("aur.txt"), "needs an AUR package")
     def test_phase3_skips_the_aur_without_paru(self) -> None:
-        (self.bin / "paru").unlink()
-        for name in ("git", "makepkg"):
-            executable(self.bin / name, RECORD)
-        self.env["PATH"] = str(self.bin)
+        self.without_paru()
         self.env["BROKEN"] = "--syncdeps"
-        clone, makepkg = self.jupiter("3")[2:]
+        clone, makepkg = self.jupiter("3", "y\n")[2:]
         self.assertTrue(clone.startswith(f"git clone {phase3.PARU} "))
         self.assertEqual(makepkg, "makepkg --syncdeps --install --noconfirm")
+        skipped = " ".join(["paru", *packages("aur.txt")])
+        self.assertIn(f"Failed to install and skipped: {skipped}", self.output)
+
+    @unittest.skipUnless(packages("aur.txt"), "needs an AUR package")
+    def test_phase3_builds_paru_only_once_its_pkgbuild_is_read(self) -> None:
+        self.without_paru()
+        [clone] = self.jupiter("3", "n\n")[2:]
+        self.assertTrue(clone.startswith(f"git clone {phase3.PARU} "))
+        self.assertIn("pkgname=paru", self.output)
         skipped = " ".join(["paru", *packages("aur.txt")])
         self.assertIn(f"Failed to install and skipped: {skipped}", self.output)
 
@@ -229,6 +247,43 @@ class Disks(unittest.TestCase):
             device.setdefault("mountpoints", [None])
         [target] = phase1.targets(devices)
         self.assertEqual(target["name"], "/dev/nvme0n1")
+
+
+class Keyboard(unittest.TestCase):
+    """The X layout phase 1 writes beside the console keymap."""
+
+    TABLE = (
+        "# consolelayout\txlayout\txmodel\txvariant\txoptions\n"
+        "de-latin1\tde\tpc105\t-\tterminate:ctrl_alt_bksp\t-\n"
+        "dvorak\tus\tpc105\tdvorak\tterminate:ctrl_alt_bksp\t-\n"
+        "dvorak\tus\tpc105\tdvorak-alt-intl\tterminate:ctrl_alt_bksp\t-\n"
+    )
+
+    def test_layout_model_and_options(self) -> None:
+        self.assertEqual(
+            phase1.keyboard("de-latin1", self.TABLE),
+            {
+                "XKBLAYOUT": "de",
+                "XKBMODEL": "pc105",
+                "XKBOPTIONS": "terminate:ctrl_alt_bksp",
+            },
+        )
+
+    def test_first_variant(self) -> None:
+        xkb = phase1.keyboard("dvorak", self.TABLE)
+        self.assertEqual(xkb["XKBLAYOUT"], "us")
+        self.assertEqual(xkb["XKBVARIANT"], "dvorak")
+
+    def test_unknown_keymap(self) -> None:
+        self.assertEqual(phase1.keyboard("tr", self.TABLE), {})
+
+    @unittest.skipUnless(phase1.KBD_MODEL_MAP.exists(), "needs systemd")
+    def test_systemds_own_map(self) -> None:
+        table = phase1.KBD_MODEL_MAP.read_text()
+        layouts = {"us": "us", "de-latin1": "de", "fr": "fr"}
+        for keymap, layout in layouts.items():
+            xkb = phase1.keyboard(keymap, table)
+            self.assertEqual(xkb["XKBLAYOUT"], layout, keymap)
 
 
 class Drivers(unittest.TestCase):

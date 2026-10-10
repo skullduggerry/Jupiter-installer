@@ -14,12 +14,15 @@ xdg-desktop-portal-gtk
 gnome-keyring
 greetd
 
-# What the shell reads and drives. nm-applet and blueman-applet stay running
-# for Wi-Fi passwords and Bluetooth pairing; pavucontrol is the Audio panel's
-# full app; secret-tool (libsecret) keeps the calendar's password; qalc
-# (libqalculate) is the launcher's calculator.
+# What the shell reads and drives. pipewire-jack takes JACK apps too, where
+# jack2 would come in otherwise (through ffmpeg); nm-applet and
+# blueman-applet stay running for Wi-Fi passwords and Bluetooth pairing;
+# pavucontrol is the Audio panel's full app; secret-tool (libsecret) keeps
+# the calendar's password; qalc (libqalculate) is the launcher's calculator;
+# qt6-imageformats lets the shell show .webp wallpapers.
 pipewire
 pipewire-pulse
+pipewire-jack
 wireplumber
 networkmanager
 network-manager-applet
@@ -32,6 +35,7 @@ brightnessctl
 libnotify
 libsecret
 libqalculate
+qt6-imageformats
 xdg-utils
 xdg-user-dirs
 cliphist
@@ -44,11 +48,12 @@ fprintd
 libfprint
 adw-gtk-theme
 
-# The apps the keybinds open.
+# The apps the keybinds open. Dolphin finds the installed apps through
+# archlinux-xdg-menu's menu (XDG_MENU_PREFIX in the dotfiles' uwsm/env).
 kitty
 dolphin
+archlinux-xdg-menu
 hyprshot
-hyprshutdown
 
 # Qt apps on Wayland, in the shell's colours: qt6ct sets their style
 # (Kvantum), icons and fonts.

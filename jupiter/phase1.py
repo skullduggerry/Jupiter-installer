@@ -51,6 +51,8 @@ export LIBVA_DRIVER_NAME=nvidia
 export __GLX_VENDOR_LIBRARY_NAME=nvidia
 export NVD_BACKEND=direct
 """
+KBD_MODEL_MAP = Path("/usr/share/systemd/kbd-model-map")
+XKB = ("XKBLAYOUT", "XKBMODEL", "XKBVARIANT", "XKBOPTIONS")
 MIN_DISK_GIB = 16  # smaller ones, like floppies, cannot take the system
 HOSTNAME = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 USERNAME = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
@@ -185,9 +187,25 @@ def _write_settings(
     (etc / "systemd").mkdir(parents=True)
     (etc / "hostname").write_text(f"{hostname}\n")
     (etc / "locale.conf").write_text(f"LANG={locale}\n")
-    (etc / "vconsole.conf").write_text(f"KEYMAP={keymap}\n")
+    xkb = keyboard(keymap, KBD_MODEL_MAP.read_text())
+    lines = [f"{key}={value}\n" for key, value in xkb.items()]
+    (etc / "vconsole.conf").write_text("".join([f"KEYMAP={keymap}\n", *lines]))
     (etc / "systemd/zram-generator.conf").write_text("[zram0]\n")
     (etc / "localtime").symlink_to(f"/usr/share/zoneinfo/{timezone}")
+
+
+def keyboard(keymap: str, table: str) -> dict[str, str]:
+    """The X layout for a console keymap, from systemd's kbd-model-map.
+
+    localectl set-keymap writes the same beside KEYMAP; the dotfiles'
+    desktop and login screen type in it.
+    """
+    for line in table.splitlines():
+        fields = line.split()
+        if fields[:1] == [keymap]:
+            values = zip(XKB, fields[1:5])
+            return {name: value for name, value in values if value != "-"}
+    return {}
 
 
 def drivers(root: Path = Path("/")) -> set[str]:

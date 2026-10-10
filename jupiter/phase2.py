@@ -13,6 +13,12 @@ SERVICES = {  # package: its service
     "bluez": "bluetooth",
     "power-profiles-daemon": "power-profiles-daemon",
 }
+USER_UNITS = {  # package: its unit, for every user's session
+    "hyprpolkitagent": "hyprpolkitagent",
+    # gcr-4's, which gnome-keyring brings: the dotfiles point SSH_AUTH_SOCK
+    # at it, since gnome-keyring 46 has no SSH agent of its own.
+    "gnome-keyring": "gcr-ssh-agent.socket",
+}
 
 
 def main() -> None:
@@ -25,5 +31,6 @@ def main() -> None:
     install(pacman, packages("core.txt"))
     services = [unit for name, unit in SERVICES.items() if name not in skipped]
     run(*target, "systemctl", "enable", *services)
-    if "hyprpolkitagent" not in skipped:
-        run(*target, "systemctl", "--global", "enable", "hyprpolkitagent")
+    units = [unit for name, unit in USER_UNITS.items() if name not in skipped]
+    if units:
+        run(*target, "systemctl", "--global", "enable", *units)

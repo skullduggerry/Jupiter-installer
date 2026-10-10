@@ -1,13 +1,15 @@
 """Phase 3: your own packages, from packages/pacman.txt and packages/aur.txt.
 
-AUR packages are installed with paru, which is built first if missing.
-paru shows each PKGBUILD for review before building it.
+AUR packages are installed with paru, which is built first if missing,
+once you have read its PKGBUILD. paru then shows each package's PKGBUILD
+for review before building it.
 """
 
 import shutil
 import tempfile
+from pathlib import Path
 
-from .common import install, packages, run, skip, succeeds
+from .common import install, log, packages, run, skip, succeeds
 
 PARU = "https://aur.archlinux.org/paru.git"
 
@@ -29,6 +31,10 @@ def main() -> None:
 def _build_paru() -> bool:
     makepkg = ["makepkg", "--syncdeps", "--install", "--noconfirm"]
     with tempfile.TemporaryDirectory() as build:
-        return succeeds("git", "clone", PARU, build) and succeeds(
-            *makepkg, cwd=build
-        )
+        if not succeeds("git", "clone", PARU, build):
+            return False
+        # The one PKGBUILD paru cannot show for review itself.
+        log("paru's PKGBUILD, from the AUR:")
+        print((Path(build) / "PKGBUILD").read_text(), flush=True)
+        answer = input("Build and install paru from it? [y/N] ")
+        return answer.strip().lower() == "y" and succeeds(*makepkg, cwd=build)
