@@ -4,6 +4,7 @@ From the live ISO this installs into the system phase 1 left at /mnt, on
 an installed system it goes through sudo.
 """
 
+import os
 from pathlib import Path
 
 from .common import LIVE, install, packages, run, skipped
@@ -12,6 +13,7 @@ SERVICES = {  # package: its service
     "networkmanager": "NetworkManager",
     "bluez": "bluetooth",
     "power-profiles-daemon": "power-profiles-daemon",
+    "reflector": "reflector.timer",
 }
 USER_UNITS = {  # package: its unit, for every user's session
     "hyprpolkitagent": "hyprpolkitagent",
@@ -19,6 +21,23 @@ USER_UNITS = {  # package: its unit, for every user's session
     # at it, since gnome-keyring 46 has no SSH agent of its own.
     "gnome-keyring": "gcr-ssh-agent.socket",
 }
+
+
+REGDOM = "/etc/conf.d/wireless-regdom"
+
+
+def country(root: Path) -> str | None:
+    """The country of the time zone set in root, from tzdata's zone.tab."""
+    localtime = root / "etc/localtime"
+    if not localtime.is_symlink():
+        return None
+    zone = os.readlink(localtime).partition("zoneinfo/")[2]
+    table = (root / "usr/share/zoneinfo/zone.tab").read_text()
+    for line in table.splitlines():
+        fields = line.split("\t")
+        if len(fields) > 2 and fields[2] == zone:
+            return fields[0]
+    return None
 
 
 def main() -> None:
@@ -34,3 +53,9 @@ def main() -> None:
     units = [unit for name, unit in USER_UNITS.items() if name not in skipped]
     if units:
         run(*target, "systemctl", "--global", "enable", *units)
+    # Wi-Fi drivers that do not set their country themselves use the
+    # world's rules otherwise: lower power, narrower channels on 5 GHz.
+    code = country(Path("/mnt") if LIVE else Path("/"))
+    if code and "wireless-regdb" not in skipped:
+        line = f'WIRELESS_REGDOM="{code}"'
+        run(*target, "sed", "-i", f"s/^#{line}$/{line}/", REGDOM)

@@ -49,6 +49,15 @@ fprintd
 libfprint
 adw-gtk-theme
 
+# Keeps pacman's mirrorlist fresh: reflector.timer, which phase 2 enables,
+# rewrites it weekly with the settings in /etc/xdg/reflector/reflector.conf.
+reflector
+
+# Wi-Fi in the rules of the country the time zone is in (phase 2 sets it in
+# /etc/conf.d/wireless-regdom), and iw to read them: `iw reg get`.
+wireless-regdb
+iw
+
 # The apps the keybinds open. Dolphin finds the installed apps through
 # archlinux-xdg-menu's menu (XDG_MENU_PREFIX in the dotfiles' uwsm/env).
 kitty

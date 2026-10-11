@@ -15,7 +15,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jupiter import phase1, phase3
+from jupiter import phase1, phase2, phase3
 from jupiter.common import INSTALLER_DIR, packages
 
 RECORD = """#!/bin/sh
@@ -34,6 +34,16 @@ exit 1
 PUSH_URL = "git@example.org:dotfiles.git"
 INSTALL = "sudo pacman -S --needed --noconfirm"
 USER_UNITS = "hyprpolkitagent gcr-ssh-agent.socket"
+# Phase 2 names the Wi-Fi rules after this machine's time zone, if it has one.
+CODE = phase2.country(Path("/"))
+REGDOM = (
+    [
+        f'sudo sed -i s/^#WIRELESS_REGDOM="{CODE}"$/'
+        f'WIRELESS_REGDOM="{CODE}"/ /etc/conf.d/wireless-regdom'
+    ]
+    if CODE
+    else []
+)
 
 
 def executable(path: Path, text: str) -> None:
@@ -93,7 +103,9 @@ class Phases(unittest.TestCase):
 
     def test_phase2_installs_the_desktop(self) -> None:
         core = " ".join(packages("core.txt"))
-        services = "NetworkManager bluetooth power-profiles-daemon"
+        services = (
+            "NetworkManager bluetooth power-profiles-daemon reflector.timer"
+        )
         self.assertEqual(
             self.jupiter("2"),
             [
@@ -101,6 +113,7 @@ class Phases(unittest.TestCase):
                 f"{INSTALL} {core}",
                 f"sudo systemctl enable {services}",
                 f"sudo systemctl --global enable {USER_UNITS}",
+                *REGDOM,
             ],
         )
 
@@ -114,8 +127,10 @@ class Phases(unittest.TestCase):
                 "sudo pacman -Syu --noconfirm",
                 f"{INSTALL} {' '.join(core)}",
                 *(f"{INSTALL} {name}" for name in core),
-                "sudo systemctl enable NetworkManager power-profiles-daemon",
+                "sudo systemctl enable NetworkManager power-profiles-daemon "
+                "reflector.timer",
                 f"sudo systemctl --global enable {USER_UNITS}",
+                *REGDOM,
             ],
         )
         self.assertIn("Failed to install, skipping: bluez", self.output)
@@ -271,6 +286,34 @@ class Lists(unittest.TestCase):
             self.assertNotEqual(
                 found.returncode, 0, f"{name} is official now: pacman.txt"
             )
+
+
+class Country(unittest.TestCase):
+    """The Wi-Fi rules' country, from the time zone and tzdata's zone.tab."""
+
+    TABLE = (
+        "# comments\n"
+        "DE\t+5230+01322\tEurope/Berlin\tmost of Germany\n"
+        "US\t+404251-0740023\tAmerica/New_York\tEastern (most areas)\n"
+    )
+
+    def country(self, zone: str | None) -> str | None:
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (root / "etc").mkdir()
+        (root / "usr/share/zoneinfo").mkdir(parents=True)
+        (root / "usr/share/zoneinfo/zone.tab").write_text(self.TABLE)
+        if zone:
+            target = f"/usr/share/zoneinfo/{zone}"
+            (root / "etc/localtime").symlink_to(target)
+        return phase2.country(root)
+
+    def test_by_time_zone(self) -> None:
+        self.assertEqual(self.country("Europe/Berlin"), "DE")
+        self.assertEqual(self.country("America/New_York"), "US")
+
+    def test_none_for_utc_or_no_zone(self) -> None:
+        self.assertIsNone(self.country("UTC"))
+        self.assertIsNone(self.country(None))
 
 
 class Disks(unittest.TestCase):
