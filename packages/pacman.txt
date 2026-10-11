@@ -3,10 +3,6 @@
 # a comment.
 
 docker
-nextcloud
-nextcloud-app-calendar
-nextcloud-app-contacts
-nextcloud-app-tasks
 nextcloud-client
 zed
 obsidian
@@ -14,3 +10,15 @@ keepassxc
 prismlauncher
 btop
 
+# What scripts/check.sh in the installer and in Jupiter-dotfiles runs: ruff
+# formats and lints the Python, mypy checks its types, python-coverage
+# measures the tests, shellcheck and shfmt do the shell, and stylua and
+# lua-language-server do Hyprland's and neovim's Lua. Drop them if you do not
+# work on the repos.
+ruff
+mypy
+python-coverage
+shellcheck
+shfmt
+stylua
+lua-language-server

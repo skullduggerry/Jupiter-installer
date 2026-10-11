@@ -27,6 +27,10 @@ exit 0
 CLONE = RECORD.replace(
     "exit 0\n", 'echo "pkgname=paru" > "$3/PKGBUILD"\nexit 0\n'
 )
+NO_READER = """#!/bin/sh
+echo "No devices available"
+exit 1
+"""
 PUSH_URL = "git@example.org:dotfiles.git"
 INSTALL = "sudo pacman -S --needed --noconfirm"
 USER_UNITS = "hyprpolkitagent gcr-ssh-agent.socket"
@@ -47,6 +51,8 @@ class Phases(unittest.TestCase):
         self.output = ""
         for name in ("sudo", "pacman", "paru", "systemctl", "wallust"):
             executable(self.bin / name, RECORD)
+        # Whatever this machine has, the tests' has no fingerprint reader.
+        executable(self.bin / "fprintd-list", NO_READER)
 
         origin = tmp / "Jupiter-dotfiles"
         for name in ("hypr/hyprland.lua", "kitty/kitty.conf", ".zshrc"):
@@ -209,6 +215,19 @@ class Phases(unittest.TestCase):
         backups = list((self.home / ".dotfiles-backup").iterdir())
         self.assertEqual(backups, [backup])
 
+    def test_a_failing_command_is_named(self) -> None:
+        self.env["BROKEN"] = "-Syu"
+        failed = subprocess.run(
+            [sys.executable, "-m", "jupiter", "2"],
+            cwd=INSTALLER_DIR,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn("Failed: sudo pacman -Syu --noconfirm", failed.stderr)
+
     @unittest.skipUnless(shutil.which("pacman"), "needs pacman")
     def test_official_packages_exist(self) -> None:
         drivers = [
@@ -229,6 +248,29 @@ class Phases(unittest.TestCase):
             check=False,
         )
         self.assertEqual(found.returncode, 0, found.stderr)
+
+
+class Lists(unittest.TestCase):
+    """packages/: each package in one list, and the AUR's in aur.txt only."""
+
+    def test_each_package_once(self) -> None:
+        names = [
+            *packages("core.txt"),
+            *packages("pacman.txt"),
+            *packages("aur.txt"),
+        ]
+        twice = sorted({name for name in names if names.count(name) > 1})
+        self.assertEqual(twice, [])
+
+    @unittest.skipUnless(shutil.which("pacman"), "needs pacman")
+    def test_aur_packages_are_not_official(self) -> None:
+        for name in packages("aur.txt"):
+            found = subprocess.run(
+                ["pacman", "-Si", name], capture_output=True, check=False
+            )
+            self.assertNotEqual(
+                found.returncode, 0, f"{name} is official now: pacman.txt"
+            )
 
 
 class Disks(unittest.TestCase):

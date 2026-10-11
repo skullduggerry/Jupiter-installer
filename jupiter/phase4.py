@@ -3,23 +3,30 @@
 Clones them into your home, links every folder of their .config/ into
 ~/.config/ and .config/.zshrc to ~/.zshrc, then sets up what they expect
 around them: the shell's notification server, the first theme, the login
-screen and zsh. Whatever a link would replace is moved to
+screen, a fingerprint where there is a reader, and zsh. Whatever a link
+would replace is moved to
 ~/.dotfiles-backup/<time>/. Safe to run again.
 """
 
 import os
 import pwd
 import shutil
+import subprocess
+import tempfile
 import time
 from pathlib import Path
 
-from .common import log, run, warn
+from .common import log, run, succeeds, warn
 from .config import DOTFILES_PUSH_URL, DOTFILES_REPO
 
 HOME = Path.home()
 CONFIG = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config")
 ZSH = Path("/usr/bin/zsh")
 NOTIFICATION_DAEMONS = ["dunst.service", "mako.service", "swaync.service"]
+SUDO_PAM = Path("/etc/pam.d/sudo")
+# First in sudo's stack: a finger is enough, and after three failed matches,
+# a timeout or with no print enrolled, sudo asks for the password as before.
+FINGERPRINT = "auth       sufficient   pam_fprintd.so\n"
 
 
 def main() -> None:
@@ -31,6 +38,7 @@ def main() -> None:
     run("systemctl", "--user", "mask", *NOTIFICATION_DAEMONS)
     _render_theme(repo)
     _install_greeter(repo)
+    _fingerprint()
     _use_zsh()
 
 
@@ -99,6 +107,44 @@ def _install_greeter(repo: Path) -> None:
         log(f"{manager.readlink().name} stays the display manager")
     else:
         run("sudo", "systemctl", "enable", "greetd")
+
+
+def _fingerprint() -> None:
+    """Where fprintd finds a reader: enroll a finger, and let sudo take it.
+
+    The dotfiles' lock screen listens for a finger by itself. Logging in
+    stays with the password, which is what unlocks the keyring.
+    """
+    if shutil.which("fprintd-list") is None:
+        return
+    user = pwd.getpwuid(os.getuid()).pw_name
+    listed = subprocess.run(
+        ["fprintd-list", user],
+        capture_output=True,
+        text=True,
+        env=os.environ | {"LC_ALL": "C"},
+        check=False,
+    )
+    if listed.returncode != 0 or "Device at" not in listed.stdout:
+        return
+    if "no fingers enrolled" in listed.stdout:
+        answer = input(
+            "Enroll a fingerprint, for the lock screen and sudo? [Y/n] "
+        )
+        if answer.strip().lower() != "n" and not succeeds("fprintd-enroll"):
+            warn("No fingerprint enrolled: run fprintd-enroll later")
+    text = SUDO_PAM.read_text()
+    if "pam_fprintd" in text:
+        return
+    lines = text.splitlines(keepends=True)
+    header = 1 if lines and lines[0].startswith("#%PAM") else 0
+    lines.insert(header, FINGERPRINT)
+    with tempfile.NamedTemporaryFile("w", suffix=".pam") as new:
+        new.write("".join(lines))
+        new.flush()
+        # -b keeps the old one as sudo~.
+        run("sudo", "install", "-b", "-m", "0644", new.name, SUDO_PAM)
+    log("sudo takes a fingerprint too")
 
 
 def _use_zsh() -> None:

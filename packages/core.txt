@@ -19,7 +19,8 @@ greetd
 # blueman-applet stay running for Wi-Fi passwords and Bluetooth pairing;
 # pavucontrol is the Audio panel's full app; secret-tool (libsecret) keeps
 # the calendar's password; qalc (libqalculate) is the launcher's calculator;
-# qt6-imageformats lets the shell show .webp wallpapers.
+# qt6-imageformats lets the shell show .webp wallpapers; fprintd and libfprint
+# drive the laptop's fingerprint sensor.
 pipewire
 pipewire-pulse
 pipewire-jack

@@ -1,0 +1,24 @@
+# The settings of the tools scripts/check.sh runs. The installer itself needs
+# nothing beyond Python's standard library.
+
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "B", "UP", "I", "SIM", "RUF", "PLW1510"]
+
+[tool.mypy]
+strict = true
+
+# check.sh runs the tests with COVERAGE_PROCESS_START pointing here, which
+# measures the phases they run as `python3 -m jupiter` as well.
+[tool.coverage.run]
+parallel = true
+source_pkgs = ["jupiter"]
+
+[tool.coverage.report]
+# The share of the installer's lines the tests run; raise it as tests are
+# added.
+fail_under = 95
+show_missing = true
+skip_empty = true

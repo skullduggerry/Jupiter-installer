@@ -17,6 +17,8 @@ from typing import Any
 from .common import INSTALLER_DIR, LIVE, output, run
 
 MNT = Path("/mnt")
+EFI = Path("/sys/firmware/efi")
+LOCALE_GEN = Path("/etc/locale.gen")  # the live ISO's, listing every locale
 ROOT_TYPE = "4f68bce3-e8cd-4db1-96e7-fbcaf984b709"  # Linux x86-64 root (/)
 SUBVOLUMES = {
     "@": "",
@@ -62,7 +64,7 @@ def main() -> None:
     """Install Arch Linux on a disk of your choice and make it bootable."""
     if not LIVE:
         raise SystemExit("Phase 1 runs from the Arch Linux live ISO.")
-    if not Path("/sys/firmware/efi").is_dir():
+    if not EFI.is_dir():
         raise SystemExit("Boot the live ISO in UEFI mode to install.")
     if MNT.is_mount():
         run("umount", "--recursive", MNT)
@@ -118,7 +120,7 @@ def _is_new_user(name: str) -> bool:
 
 
 def _is_locale(name: str) -> bool:
-    return f"\n#{name} UTF-8" in Path("/etc/locale.gen").read_text()
+    return f"\n#{name} UTF-8" in LOCALE_GEN.read_text()
 
 
 def _listed(*command: str) -> Callable[[str], bool]:
@@ -203,7 +205,7 @@ def keyboard(keymap: str, table: str) -> dict[str, str]:
     for line in table.splitlines():
         fields = line.split()
         if fields[:1] == [keymap]:
-            values = zip(XKB, fields[1:5])
+            values = zip(XKB, fields[1:5], strict=False)
             return {name: value for name, value in values if value != "-"}
     return {}
 
