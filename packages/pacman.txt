@@ -9,6 +9,7 @@ obsidian
 keepassxc
 prismlauncher
 btop
+fastfetch
 
 # What scripts/check.sh in the installer and in Jupiter-dotfiles runs: ruff
 # formats and lints the Python, mypy checks its types, python-coverage
