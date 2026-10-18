@@ -4,6 +4,5 @@
 wallust #if AUR package unavaiable use cargo
 onlyoffice-bin
 brave-origin-bin
-claude-desktop
 vesktop-bin
 
