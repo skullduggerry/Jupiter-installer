@@ -58,6 +58,9 @@ XKB = ("XKBLAYOUT", "XKBMODEL", "XKBVARIANT", "XKBOPTIONS")
 MIN_DISK_GIB = 16  # smaller ones, like floppies, cannot take the system
 HOSTNAME = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 USERNAME = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
+# The account greetd's package makes for the login screen in phase 2, which
+# keeps a user of that name instead: the login screen would run as them.
+RESERVED = {"greeter"}
 
 
 def main() -> None:
@@ -115,7 +118,7 @@ def _new_password(user: str) -> str:
 
 
 def _is_new_user(name: str) -> bool:
-    taken = {entry.pw_name for entry in pwd.getpwall()}
+    taken = {entry.pw_name for entry in pwd.getpwall()} | RESERVED
     return bool(USERNAME.fullmatch(name)) and name not in taken
 
 

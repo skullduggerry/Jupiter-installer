@@ -7,8 +7,8 @@
 #
 # ruff formats and lints the Python and mypy checks its types (strict), shfmt
 # and shellcheck the shell, set up in pyproject.toml and .editorconfig. The
-# tests (python3 -m unittest) run under coverage, held to pyproject.toml's
-# fail_under.
+# tests are Jupiter-testing's, next to this repo or at JUPITER_TESTING, whose
+# scripts/test.sh runs this repo's suites under coverage, held to its floor.
 set -uo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd) || exit 2
@@ -29,8 +29,7 @@ done
 
 # Each tool, and the package it comes in.
 declare -A packages=(
-    ["ruff"]=ruff ["mypy"]=mypy ["coverage"]=python-coverage
-    ["shellcheck"]=shellcheck ["shfmt"]=shfmt
+    ["ruff"]=ruff ["mypy"]=mypy ["shellcheck"]=shellcheck ["shfmt"]=shfmt
 )
 missing=()
 for tool in "${!packages[@]}"; do
@@ -148,23 +147,20 @@ if ((${#shell[@]})); then
 fi
 passed "${#shell[@]} files"
 
-section "tests (python3 -m unittest, with coverage)"
-# Every Python process the tests start measures itself (coverage's .pth file
-# reads COVERAGE_PROCESS_START), the phases they run as `python3 -m jupiter`
-# included.
-export COVERAGE_FILE=$tmp/coverage/data
-mkdir "$tmp/coverage"
-if COVERAGE_PROCESS_START=$repo/pyproject.toml python3 -m unittest >"$tmp/out" 2>&1; then
-    passed "$(grep -m1 '^Ran ' "$tmp/out")"
+section "tests (Jupiter-testing)"
+# A repo of their own, which reads this one where it is: phase 1 against
+# stand-in commands and a temporary /mnt, phases 2 to 4 in a throwaway home,
+# and who is made a user with which rights. It names any tool it needs that
+# is missing.
+testing=$(realpath -m "${JUPITER_TESTING:-$repo/../Jupiter-testing}")
+if [[ ! -x $testing/scripts/test.sh ]]; then
+    fail "no Jupiter-testing at $testing: clone it next to this repo, or set JUPITER_TESTING"
+elif JUPITER_INSTALLER=$repo "$testing/scripts/test.sh" installer >"$tmp/out" 2>&1; then
+    passed "$(grep -c '^  ok' "$tmp/out") checks, $(grep -o 'python lines: [0-9]*%' "$tmp/out")"
 else
-    tail -40 "$tmp/out" >"$tmp/tail" && mv "$tmp/tail" "$tmp/out"
-    failed "unittest"
-fi
-coverage combine --quiet --rcfile=pyproject.toml "$tmp/coverage" 2>/dev/null
-if coverage report --rcfile=pyproject.toml >"$tmp/out" 2>&1; then
-    ok "lines covered: $(grep '^TOTAL' "$tmp/out" | awk '{print $4}')"
-else
-    failed "line coverage under pyproject.toml's fail_under"
+    grep -A12 '^  FAIL' "$tmp/out" >"$tmp/fails" || tail -20 "$tmp/out" >"$tmp/fails"
+    mv "$tmp/fails" "$tmp/out"
+    failed "Jupiter-testing's scripts/test.sh installer"
 fi
 
 echo
