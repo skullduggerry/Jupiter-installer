@@ -3,18 +3,14 @@
 Clones them into your home, links every folder of their .config/ into
 ~/.config/ and .config/.zshrc to ~/.zshrc, then sets up what they expect
 around them: the shell's notification server, the first theme, their udev
-rules and pacman hooks, the login screen, a KDE Connect command that updates
-them, a fingerprint where there is a reader, and zsh. Whatever a link would
-replace is moved to ~/.dotfiles-backup/<time>/. Safe to run again.
+rules and pacman hooks, the login screen, a fingerprint where there is a
+reader, and zsh. Whatever a link would replace is moved to
+~/.dotfiles-backup/<time>/. Safe to run again.
 """
 
-import json
 import os
 import pwd
-import re
-import shlex
 import shutil
-import string
 import subprocess
 import tempfile
 import time
@@ -31,13 +27,6 @@ SUDO_PAM = Path("/etc/pam.d/sudo")
 # First in sudo's stack: a finger is enough, and after three failed matches,
 # a timeout or with no print enrolled, sudo asks for the password as before.
 FINGERPRINT = "auth       sufficient   pam_fprintd.so\n"
-KDECONNECT = CONFIG / "kdeconnect"
-# The Run Command's key among KDE Connect's, its own so that running again
-# replaces it rather than adding another.
-UPDATE_KEY = "jupiter_update_dotfiles"
-# uwsm starts KDE Connect from its XDG autostart entry, and it reads its
-# commands only when it starts.
-KDECONNECT_UNIT = "app-org.kde.kdeconnect.daemon@autostart.service"
 
 
 def main() -> None:
@@ -50,7 +39,6 @@ def main() -> None:
     _render_theme(repo)
     _install_system(repo)
     _install_greeter(repo)
-    _offer_update(repo)
     _fingerprint()
     _use_zsh()
 
@@ -128,100 +116,6 @@ def _install_greeter(repo: Path) -> None:
         log(f"{manager.readlink().name} stays the display manager")
     else:
         run("sudo", "systemctl", "enable", "greetd")
-
-
-def _offer_update(repo: Path) -> None:
-    """Let each paired KDE Connect device update the dotfiles: its Run
-    Command "Update dotfiles" pulls them, which is all an update takes, as
-    ~/.config links into the clone. KDE Connect keeps commands per device,
-    so one paired later gets it when this runs again."""
-    trusted = KDECONNECT / "trusted_devices"
-    if not trusted.exists():
-        return
-    command = f"git -C {shlex.quote(str(repo))} pull --ff-only"
-    entry = {"command": command, "name": "Update dotfiles"}
-    devices = re.findall(r"^\[(\w+)\]$", trusted.read_text(), re.MULTILINE)
-    added = False
-    for device in devices:
-        config = KDECONNECT / device / "kdeconnect_runcommand/config"
-        added |= _add_command(config, entry)
-    if added:
-        run("systemctl", "--user", "try-restart", KDECONNECT_UNIT)
-
-
-def _add_command(config: Path, entry: dict[str, str]) -> bool:
-    """Put entry among the commands in config, a QSettings file that holds
-    them as JSON, and tell whether that changed it. A file it cannot read
-    is left alone."""
-    lines = config.read_text().splitlines() if config.exists() else []
-    found = [i for i, line in enumerate(lines) if line.startswith("commands=")]
-    commands = {}
-    if found:
-        try:
-            value = lines[found[0]].removeprefix("commands=")
-            commands = json.loads(_from_ini(value))
-            if not isinstance(commands, dict):
-                raise ValueError(commands)
-        except ValueError:
-            warn(f"{config} is not as KDE Connect writes it: left alone")
-            return False
-    if commands.get(UPDATE_KEY) == entry:
-        return False
-    commands[UPDATE_KEY] = entry
-    value = json.dumps(commands, separators=(",", ":"), ensure_ascii=False)
-    line = f"commands={_to_ini(value)}"
-    if found:
-        lines[found[0]] = line
-    else:
-        if "[General]" not in lines:
-            lines.insert(0, "[General]")
-        lines.insert(lines.index("[General]") + 1, line)
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text("\n".join(lines) + "\n")
-    log(f"KDE Connect: {config.parent.parent.name} can update the dotfiles")
-    return True
-
-
-def _from_ini(value: str) -> str:
-    """The text in a value QSettings wrote as "@ByteArray(...)": \\ and \\"
-    escaped, and any other byte outside printable ASCII as \\x and as many
-    hex digits as follow."""
-    match = re.fullmatch(r'"@ByteArray\((.*)\)"', value, re.DOTALL)
-    if match is None:
-        raise ValueError(value)
-    raw = bytearray()
-    for byte, escaped, plain in re.findall(
-        r"\\x([0-9a-fA-F]+)|\\(.)|(.)", match[1], re.DOTALL
-    ):
-        if byte:
-            raw.append(int(byte, 16))  # past 255, ValueError
-        elif escaped in ('"', "\\"):
-            raw += escaped.encode()
-        elif escaped:
-            raise ValueError(escaped)
-        else:
-            raw += plain.encode()
-    return raw.decode()
-
-
-def _to_ini(text: str) -> str:
-    """text as QSettings writes a byte array, the reverse of _from_ini. A
-    hex digit right after a \\x escape is escaped too, or it would join
-    it."""
-    out = []
-    after_hex = False
-    for byte in text.encode():
-        char = chr(byte)
-        if char in '"\\':
-            out.append("\\" + char)
-            after_hex = False
-        elif 32 <= byte < 127 and not (after_hex and char in string.hexdigits):
-            out.append(char)
-            after_hex = False
-        else:
-            out.append(f"\\x{byte:02x}")
-            after_hex = True
-    return '"@ByteArray(' + "".join(out) + ')"'
 
 
 def _fingerprint() -> None:
