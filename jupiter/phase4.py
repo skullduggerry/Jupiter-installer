@@ -99,8 +99,9 @@ def _render_theme(repo: Path) -> None:
 
 
 def _install_system(repo: Path) -> None:
-    """The udev rules (a drawing tablet's pad for the shell) and pacman
-    hooks (desktop entries uwsm refuses, such as Nextcloud's)."""
+    """The udev rules (a drawing tablet's pad for the shell), pacman hooks
+    (desktop entries uwsm refuses, such as Nextcloud's), and root's copy of
+    the login screen's installer, which the shell's Settings app runs."""
     script = repo / "scripts/install-system.sh"
     if script.exists():
         run("sudo", script)
