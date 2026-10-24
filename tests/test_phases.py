@@ -6,6 +6,7 @@ called, and fail when an argument is $BROKEN, so nothing outside the
 temporary folder changes.
 """
 
+import json
 import os
 import pwd
 import shutil
@@ -15,7 +16,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jupiter import phase1, phase2, phase3
+from jupiter import phase1, phase2, phase3, phase4
 from jupiter.common import INSTALLER_DIR, packages
 
 RECORD = """#!/bin/sh
@@ -48,6 +49,21 @@ REGDOM = (
     ]
     if CODE
     else []
+)
+# A command as KDE Connect 26.08's settings page saved it: QSettings escapes
+# every byte outside printable ASCII, and a hex digit right after one.
+KDE_COMMANDS = (
+    r'commands="@ByteArray({\"20c02cf9_9ee7_4a24_ae51_879bd682d1fd\":'
+    r"{\"command\":\"printf 'a\\tb\\\\n'; echo \\\"x\\\"\","
+    r'\"name\":\"Gr\xc3\xbc\xc3\x9f\x65 \\\\ \xe2\x9c\x93\"}})"'
+)
+KDE_ENTRY = {
+    "command": "printf 'a\tb\\n'; echo \"x\"",
+    "name": "Grüße \\ ✓",
+}
+RESTART_KDECONNECT = (
+    "systemctl --user try-restart "
+    "app-org.kde.kdeconnect.daemon@autostart.service"
 )
 
 
@@ -250,6 +266,60 @@ class Phases(unittest.TestCase):
         backups = list((self.home / ".dotfiles-backup").iterdir())
         self.assertEqual(backups, [backup])
 
+    def commands(self, device: str) -> dict[str, dict[str, str]]:
+        config = self.kdeconnect / device / "kdeconnect_runcommand/config"
+        lines = config.read_text().splitlines()
+        self.assertEqual(lines[0], "[General]")
+        commands: dict[str, dict[str, str]] = json.loads(
+            phase4._from_ini(lines[1].removeprefix("commands="))
+        )
+        return commands
+
+    def test_phase4_lets_paired_devices_update_the_dotfiles(self) -> None:
+        self.kdeconnect = self.home / ".config/kdeconnect"
+        executable(
+            self.kdeconnect / "trusted_devices",
+            "[phone]\nname=Phone\n\n[desktop]\nname=Desktop\n",
+        )
+        executable(
+            self.kdeconnect / "phone/kdeconnect_runcommand/config",
+            f"[General]\n{KDE_COMMANDS}\n",
+        )
+
+        calls = self.jupiter("4")
+
+        update = {
+            "command": f"git -C {self.repo} pull --ff-only",
+            "name": "Update dotfiles",
+        }
+        self.assertEqual(
+            self.commands("phone"),
+            {
+                "20c02cf9_9ee7_4a24_ae51_879bd682d1fd": KDE_ENTRY,
+                "jupiter_update_dotfiles": update,
+            },
+        )
+        self.assertEqual(
+            self.commands("desktop"), {"jupiter_update_dotfiles": update}
+        )
+        self.assertEqual(calls.count(RESTART_KDECONNECT), 1)
+        # Already there: nothing to write, and KDE Connect keeps running.
+        self.assertNotIn(RESTART_KDECONNECT, self.jupiter("4"))
+
+    def test_phase4_leaves_commands_it_cannot_read(self) -> None:
+        kdeconnect = self.home / ".config/kdeconnect"
+        executable(kdeconnect / "trusted_devices", "[phone]\nname=Phone\n")
+        config = kdeconnect / "phone/kdeconnect_runcommand/config"
+        executable(config, "[General]\ncommands=@Invalid()\n")
+
+        calls = self.jupiter("4")
+
+        self.assertEqual(
+            config.read_text(), "[General]\ncommands=@Invalid()\n"
+        )
+        self.assertIn("is not as KDE Connect writes it", self.output)
+        self.assertNotIn(RESTART_KDECONNECT, calls)
+
     def test_a_failing_command_is_named(self) -> None:
         self.env["BROKEN"] = "-Syu"
         failed = subprocess.run(
@@ -283,6 +353,25 @@ class Phases(unittest.TestCase):
             check=False,
         )
         self.assertEqual(found.returncode, 0, found.stderr)
+
+
+class KdeConnectConfig(unittest.TestCase):
+    """The QSettings values phase 4 reads and writes KDE Connect's
+    commands in."""
+
+    def test_reads_and_writes_as_kde_connect_does(self) -> None:
+        value = KDE_COMMANDS.removeprefix("commands=")
+        text = phase4._from_ini(value)
+        self.assertEqual(
+            json.loads(text),
+            {"20c02cf9_9ee7_4a24_ae51_879bd682d1fd": KDE_ENTRY},
+        )
+        self.assertEqual(phase4._to_ini(text), value)
+
+    def test_refuses_what_it_does_not_know(self) -> None:
+        for value in ('"{}"', r'"@ByteArray(\n)"', r'"@ByteArray(\x100)"'):
+            with self.subTest(value), self.assertRaises(ValueError):
+                phase4._from_ini(value)
 
 
 class Lists(unittest.TestCase):
