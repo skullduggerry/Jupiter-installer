@@ -44,6 +44,7 @@ wl-clipboard
 wf-recorder
 zenity
 python
+python-dateutil
 lua
 fprintd
 libfprint

@@ -19,12 +19,13 @@ btop
 fastfetch
 
 # What scripts/check.sh in the installer and in Jupiter-dotfiles runs: ruff
-# formats and lints the Python, mypy checks its types, python-coverage
-# measures the tests, shellcheck and shfmt do the shell, and stylua and
-# lua-language-server do Hyprland's and neovim's Lua. Drop them if you do not
-# work on the repos.
+# formats and lints the Python, mypy checks its types (with the stubs of the
+# libraries the helpers use), python-coverage measures the tests, shellcheck
+# and shfmt do the shell, and stylua and lua-language-server do Hyprland's and
+# neovim's Lua. Drop them if you do not work on the repos.
 ruff
 mypy
+python-types-python-dateutil
 python-coverage
 shellcheck
 shfmt
