@@ -1,7 +1,7 @@
 """Phases 2 to 4 against stand-in commands, in a throwaway home, and the
 drivers phase 1 picks, against stand-in hardware.
 
-sudo, pacman, paru, systemctl and wallust only record how they were
+sudo, pacman, paru, systemctl, ufw and wallust only record how they were
 called, and fail when an argument is $BROKEN, so nothing outside the
 temporary folder changes.
 """
@@ -34,6 +34,11 @@ exit 1
 PUSH_URL = "git@example.org:dotfiles.git"
 INSTALL = "sudo pacman -S --needed --noconfirm"
 USER_UNITS = "hyprpolkitagent gcr-ssh-agent.socket"
+# Where ufw is installed, phase 3 lets KDE Connect in from the local networks.
+KDECONNECT = [
+    f"sudo ufw allow from {network} to any app KDEConnect"
+    for network in phase3.LOCAL_NETWORKS
+]
 # Phase 2 names the Wi-Fi rules after this machine's time zone, if it has one.
 CODE = phase2.country(Path("/"))
 REGDOM = (
@@ -59,7 +64,7 @@ class Phases(unittest.TestCase):
         self.bin = tmp / "bin"
         self.calls = tmp / "calls"
         self.output = ""
-        for name in ("sudo", "pacman", "paru", "systemctl", "wallust"):
+        for name in ("sudo", "pacman", "paru", "systemctl", "ufw", "wallust"):
             executable(self.bin / name, RECORD)
         # Whatever this machine has, the tests' has no fingerprint reader.
         executable(self.bin / "fprintd-list", NO_READER)
@@ -69,6 +74,7 @@ class Phases(unittest.TestCase):
             executable(origin / ".config" / name, "")
         executable(origin / ".config/wallust/apply.sh", RECORD)
         executable(origin / "scripts/install-greeter.sh", "")
+        executable(origin / "scripts/install-system.sh", "")
         git = ["git", "-C", str(origin)]
         author = ["-c", "user.name=test", "-c", "user.email=test"]
         subprocess.run([*git, "init", "-q"], check=True)
@@ -145,9 +151,21 @@ class Phases(unittest.TestCase):
             [
                 "sudo pacman -Syu --noconfirm",
                 f"{INSTALL} {official}",
+                *KDECONNECT,
                 *(f"paru --sync --aur --needed {name}" for name in aur),
             ],
         )
+
+    def test_phase3_leaves_the_firewall_without_ufw(self) -> None:
+        (self.bin / "ufw").unlink()
+        self.env["PATH"] = str(self.bin)
+        calls = self.jupiter("3")
+        self.assertEqual([call for call in calls if "ufw" in call], [])
+
+    def test_phase3_opens_no_port_for_a_skipped_kdeconnect(self) -> None:
+        self.env["BROKEN"] = "kdeconnect"
+        calls = self.jupiter("3")
+        self.assertEqual([call for call in calls if "ufw" in call], [])
 
     @unittest.skipUnless(packages("aur.txt"), "needs an AUR package")
     def test_phase3_skips_a_broken_aur_package(self) -> None:
@@ -155,7 +173,8 @@ class Phases(unittest.TestCase):
         broken = self.env["BROKEN"] = aur[0]
         calls = self.jupiter("3")
         self.assertEqual(
-            calls[2:], [f"paru --sync --aur --needed {name}" for name in aur]
+            calls[2:],
+            [*KDECONNECT, *(f"paru --sync --aur --needed {n}" for n in aur)],
         )
         self.assertIn(f"Failed to install and skipped: {broken}", self.output)
 
@@ -169,7 +188,7 @@ class Phases(unittest.TestCase):
     def test_phase3_skips_the_aur_without_paru(self) -> None:
         self.without_paru()
         self.env["BROKEN"] = "--syncdeps"
-        clone, makepkg = self.jupiter("3", "y\n")[2:]
+        clone, makepkg = self.jupiter("3", "y\n")[2 + len(KDECONNECT) :]
         self.assertTrue(clone.startswith(f"git clone {phase3.PARU} "))
         self.assertEqual(makepkg, "makepkg --syncdeps --install --noconfirm")
         skipped = " ".join(["paru", *packages("aur.txt")])
@@ -178,7 +197,7 @@ class Phases(unittest.TestCase):
     @unittest.skipUnless(packages("aur.txt"), "needs an AUR package")
     def test_phase3_builds_paru_only_once_its_pkgbuild_is_read(self) -> None:
         self.without_paru()
-        [clone] = self.jupiter("3", "n\n")[2:]
+        [clone] = self.jupiter("3", "n\n")[2 + len(KDECONNECT) :]
         self.assertTrue(clone.startswith(f"git clone {phase3.PARU} "))
         self.assertIn("pkgname=paru", self.output)
         skipped = " ".join(["paru", *packages("aur.txt")])
@@ -213,6 +232,7 @@ class Phases(unittest.TestCase):
         expected = [
             "systemctl --user mask dunst.service mako.service swaync.service",
             "apply.sh",
+            f"sudo {self.repo}/scripts/install-system.sh",
             f"sudo {self.repo}/scripts/install-greeter.sh",
         ]
         manager = Path("/etc/systemd/system/display-manager.service")

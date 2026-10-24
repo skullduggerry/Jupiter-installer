@@ -2,9 +2,9 @@
 
 Clones them into your home, links every folder of their .config/ into
 ~/.config/ and .config/.zshrc to ~/.zshrc, then sets up what they expect
-around them: the shell's notification server, the first theme, the login
-screen, a fingerprint where there is a reader, and zsh. Whatever a link
-would replace is moved to
+around them: the shell's notification server, the first theme, their udev
+rules and pacman hooks, the login screen, a fingerprint where there is a
+reader, and zsh. Whatever a link would replace is moved to
 ~/.dotfiles-backup/<time>/. Safe to run again.
 """
 
@@ -37,6 +37,7 @@ def main() -> None:
     # A daemon D-Bus starts on demand would take the shell's notifications.
     run("systemctl", "--user", "mask", *NOTIFICATION_DAEMONS)
     _render_theme(repo)
+    _install_system(repo)
     _install_greeter(repo)
     _fingerprint()
     _use_zsh()
@@ -95,6 +96,14 @@ def _render_theme(repo: Path) -> None:
             "wallust is missing: the first login after installing it "
             "renders the theme"
         )
+
+
+def _install_system(repo: Path) -> None:
+    """The udev rules (a drawing tablet's pad for the shell) and pacman
+    hooks (desktop entries uwsm refuses, such as Nextcloud's)."""
+    script = repo / "scripts/install-system.sh"
+    if script.exists():
+        run("sudo", script)
 
 
 def _install_greeter(repo: Path) -> None:

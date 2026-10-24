@@ -5,4 +5,7 @@ wallust #if AUR package unavaiable use cargo
 onlyoffice-bin
 brave-origin-bin
 vesktop-bin
+# A RemoteDesktop portal for KDE Connect's remote input, which Hyprland's
+# portal lacks; the dotfiles' xdg-desktop-portal/hyprland-portals.conf uses it.
+hypr-kdeconnect-fix-git
 

@@ -4,6 +4,13 @@
 
 docker
 nextcloud-client
+# KDE Connect, with what it needs outside Plasma: sshfs to browse the phone's
+# files, oxygen-sounds for the ring when the phone looks for this computer.
+# Remote input comes from hypr-kdeconnect-fix (aur.txt); phase 3 opens its
+# ports to the local networks where ufw is installed.
+kdeconnect
+sshfs
+oxygen-sounds
 zed
 obsidian
 keepassxc
