@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # Fetch this installer, or update it, and run it: bootstrap.sh [phase ...]
+# From a clone, `bootstrap.sh check|lint|test [repo ...]` checks the repos,
+# as ./check.sh does (./check.sh --help).
 set -euo pipefail
+
+# Checking works on the clones as they are, from wherever you are: no update.
+case ${1-} in
+    check | lint | test)
+        exec "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/check.sh" "$@"
+        ;;
+esac
 
 repo=${INSTALLER_REPO:-https://codeberg.org/skullduggery/Jupiter-installer.git}
 dir=$HOME/$(basename "$repo" .git)

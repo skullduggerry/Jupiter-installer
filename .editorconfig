@@ -9,7 +9,7 @@ indent_style = space
 indent_size = 4
 
 # shfmt reads these.
-[{*.sh,pre-commit,pre-push}]
+[*.sh]
 switch_case_indent = true
 
 [*.md]

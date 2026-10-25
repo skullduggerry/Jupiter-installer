@@ -1,5 +1,5 @@
-# The settings of the tools scripts/check.sh runs. The installer itself needs
-# nothing beyond Python's standard library.
+# The settings of the tools Jupiter-testing's checks run, which editors read
+# too. The installer itself needs nothing beyond Python's standard library.
 
 [tool.ruff]
 line-length = 79
