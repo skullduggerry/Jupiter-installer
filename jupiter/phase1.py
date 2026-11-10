@@ -55,6 +55,11 @@ export NVD_BACKEND=direct
 """
 KBD_MODEL_MAP = Path("/usr/share/systemd/kbd-model-map")
 XKB = ("XKBLAYOUT", "XKBMODEL", "XKBVARIANT", "XKBOPTIONS")
+# The initramfs only has to find the root file system. Without kms the
+# graphics driver loads beside the rest of the system instead of before it,
+# and Btrfs needs no fsck. Nothing is typed there (no encryption), so the
+# console's keymap and font can wait for systemd-vconsole-setup too.
+HOOKS = "base udev autodetect microcode modconf keyboard block filesystems"
 MIN_DISK_GIB = 16  # smaller ones, like floppies, cannot take the system
 HOSTNAME = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 USERNAME = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
@@ -186,10 +191,12 @@ def _write_settings(
 ) -> None:
     """Write the settings no package owns.
 
-    They go in before pacstrap, so the initramfs it builds has the keymap.
+    They go in before pacstrap, so the initramfs it builds has these hooks.
     """
     etc = MNT / "etc"
     (etc / "systemd").mkdir(parents=True)
+    (etc / "mkinitcpio.conf.d").mkdir()
+    (etc / "mkinitcpio.conf.d/jupiter.conf").write_text(f"HOOKS=({HOOKS})\n")
     (etc / "hostname").write_text(f"{hostname}\n")
     (etc / "locale.conf").write_text(f"LANG={locale}\n")
     xkb = keyboard(keymap, KBD_MODEL_MAP.read_text())
@@ -254,8 +261,14 @@ def _install_boot_loader() -> None:
         "title   Arch Linux\n"
         "linux   /vmlinuz-linux\n"
         "initrd  /initramfs-linux.img\n"
-        f"options root=UUID={uuid} rootflags=subvol=@ rw zswap.enabled=0\n"
+        f"options root=UUID={uuid} rootflags=subvol=@ rw zswap.enabled=0"
+        " quiet loglevel=3\n"
     )
+    # No menu to wait at: holding Space at power-on still brings it up.
+    loader = MNT / "boot/loader/loader.conf"
+    text = loader.read_text() if loader.exists() else ""
+    if not re.search(r"^timeout\b", text, re.MULTILINE):
+        loader.write_text(text + "timeout 0\n")
 
 
 def _copy_installer(user: str) -> None:

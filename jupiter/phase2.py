@@ -7,7 +7,7 @@ an installed system it goes through sudo.
 import os
 from pathlib import Path
 
-from .common import LIVE, install, packages, run, skipped
+from .common import LIVE, install, output, packages, run, skipped
 
 SERVICES = {  # package: its service
     "networkmanager": "NetworkManager",
@@ -22,6 +22,20 @@ USER_UNITS = {  # package: its unit, for every user's session
     "gnome-keyring": "gcr-ssh-agent.socket",
 }
 
+# systemd's TPM measurements, which only something bound to the TPM reads:
+# phase 1 encrypts nothing, and they cost every boot half a second.
+TPM_UNITS = [
+    "systemd-tpm2-setup-early.service",
+    "systemd-tpm2-setup.service",
+    "systemd-pcrphase-initrd.service",
+    "systemd-pcrphase-sysinit.service",
+    "systemd-pcrphase.service",
+    "systemd-pcrmachine.service",
+    "systemd-pcrproduct.service",
+    "systemd-pcrlogin@.service",
+    "systemd-pcrnvdone.service",
+    "systemd-pcrosseparator.service",
+]
 
 REGDOM = "/etc/conf.d/wireless-regdom"
 
@@ -40,6 +54,14 @@ def country(root: Path) -> str | None:
     return None
 
 
+def encrypted() -> bool:
+    """Whether a disk here holds a LUKS volume, which a TPM may unlock.
+
+    Phase 1 makes none; a system set up by hand keeps its measurements.
+    """
+    return "crypto_LUKS" in output("lsblk", "--noheadings", "-o", "FSTYPE")
+
+
 def main() -> None:
     """Install packages/core.txt and enable the services it needs."""
     if LIVE and not Path("/mnt").is_mount():
@@ -53,6 +75,8 @@ def main() -> None:
     units = [unit for name, unit in USER_UNITS.items() if name not in skipped]
     if units:
         run(*target, "systemctl", "--global", "enable", *units)
+    if not encrypted():
+        run(*target, "systemctl", "mask", *TPM_UNITS)
     # Wi-Fi drivers that do not set their country themselves use the
     # world's rules otherwise: lower power, narrower channels on 5 GHz.
     code = country(Path("/mnt") if LIVE else Path("/"))
