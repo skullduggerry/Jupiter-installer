@@ -45,7 +45,10 @@ def main() -> None:
 
 def _fetch(repo: Path) -> None:
     if (repo / ".git").is_dir():
-        run("git", "-C", repo, "pull", "--ff-only")
+        # Offline, or a clone with commits its origin lacks: the rest of the
+        # phase sets up the clone that is there.
+        if not succeeds("git", "-C", repo, "pull", "--ff-only"):
+            warn(f"Could not update {repo}: setting it up as it is")
     else:
         run("git", "clone", DOTFILES_REPO, repo)
     if DOTFILES_PUSH_URL:
@@ -78,7 +81,10 @@ def _link(source: Path, target: Path, backup: Path) -> None:
     if target.is_symlink() and target.readlink() == source:
         return
     if target.exists() or target.is_symlink():
-        moved = backup / target.relative_to(HOME)
+        # Under the backup as under the home; by its whole path where
+        # XDG_CONFIG_HOME is outside it.
+        base = HOME if target.is_relative_to(HOME) else Path(target.anchor)
+        moved = backup / target.relative_to(base)
         moved.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(target, moved)
         log(f"Moved {target} to {moved}")
