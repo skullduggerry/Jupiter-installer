@@ -51,4 +51,6 @@ Each Jupiter repo has this `check.sh`, with the same arguments, and `bootstrap.s
 ## Documentation
 
 - [The wiki](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki), shared by the three repos: installing, customising, development.
+- [Installer trace](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki/Installer-trace): every step of `bootstrap.sh` and the four phases, in the order the code runs it.
+- [Disk encryption](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki/Disk-encryption): how the encrypted disk, Secure Boot, the TPM and the fingerprint fit together, and a checklist for real hardware with the way back from each step.
 - [Encrypting an existing install](docs/encrypt-an-existing-install.md): a system phase 1 installed before it encrypted, encrypted in place from the live ISO.
