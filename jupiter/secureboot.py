@@ -1,0 +1,59 @@
+"""Secure Boot with keys of your own, through sbctl.
+
+Phase 1 makes the keys on an encrypted system and enrols them, Microsoft's
+beside them (a graphics card's firmware is signed by Microsoft), when the
+firmware is in Setup Mode: its keys erased in the firmware's menu. sbctl then
+signs the unified kernel image each time mkinitcpio builds it, and
+systemd-boot each time systemd updates it; nothing else is signed, the bare
+kernel least of all, so under Secure Boot only that image boots, with its
+command line as built. Kernel lockdown (lockdown=integrity) is left off: it
+refuses Arch's nvidia-open modules, which are unsigned (seen in the VM).
+"""
+
+from pathlib import Path
+
+EFIVARS = Path("/sys/firmware/efi/efivars")
+GLOBAL = "8be4df61-93ca-11d2-aa0d-00e098032b8c"  # EFI_GLOBAL_VARIABLE
+# systemd-boot, and the copy of it bootctl installs when there is one.
+BOOT_EFI = Path("/usr/lib/systemd/boot/efi/systemd-bootx64.efi")
+SIGNED_BOOT_EFI = BOOT_EFI.with_name(BOOT_EFI.name + ".signed")
+UKI = Path("/boot/EFI/Linux/arch-linux.efi")
+PRESET = f"""\
+# A unified kernel image alone, which sbctl's mkinitcpio hook signs: with no
+# separate initramfs and the kernel itself unsigned, Secure Boot lets nothing
+# else start Linux. Written by Jupiter's phase 1.
+ALL_kver="/boot/vmlinuz-linux"
+PRESETS=('default')
+default_uki="{UKI}"
+"""
+SETUP_MODE_HELP = """\
+The firmware is not in Setup Mode, so the Secure Boot keys this install
+makes cannot be enrolled now, and the TPM cannot unlock the disk until they
+are. To enrol them during the install: reboot into the firmware's setup,
+erase (clear) its Secure Boot keys, save, and boot this ISO again. Or go on:
+on the installed system, phase 4 says what is left."""
+NO_SECURE_BOOT_HELP = """\
+This firmware has no Secure Boot: an encrypted system asks for its
+passphrase at every boot."""
+
+
+def _flag(name: str, efivars: Path) -> bool | None:
+    """An EFI global variable's one-byte value, None if it is not set."""
+    try:
+        data = (efivars / f"{name}-{GLOBAL}").read_bytes()
+    except OSError:
+        return None
+    return data[4:5] == b"\x01"  # after the four bytes of attributes
+
+
+def state(efivars: Path | None = None) -> str:
+    """'setup' (no keys: sbctl can enrol), 'on', 'off' (keys, not
+    enforced) or 'none' (no Secure Boot in this firmware). efivars: this
+    machine's, or the folder given."""
+    efivars = efivars or EFIVARS
+    setup = _flag("SetupMode", efivars)
+    if setup is None:
+        return "none"
+    if setup:
+        return "setup"
+    return "on" if _flag("SecureBoot", efivars) else "off"

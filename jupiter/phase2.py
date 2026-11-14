@@ -23,7 +23,8 @@ USER_UNITS = {  # package: its unit, for every user's session
 }
 
 # systemd's TPM measurements, which only something bound to the TPM reads:
-# phase 1 encrypts nothing, and they cost every boot half a second.
+# without an encrypted disk (phase 1 asked) nothing is, and they cost every
+# boot half a second. An encrypted system keeps them for its TPM binding.
 TPM_UNITS = [
     "systemd-tpm2-setup-early.service",
     "systemd-tpm2-setup.service",
@@ -55,10 +56,8 @@ def country(root: Path) -> str | None:
 
 
 def encrypted() -> bool:
-    """Whether a disk here holds a LUKS volume, which a TPM may unlock.
-
-    Phase 1 makes none; a system set up by hand keeps its measurements.
-    """
+    """Whether a disk here holds a LUKS volume, which a TPM may unlock:
+    phase 1's, unless encryption was declined, or one set up by hand."""
     return "crypto_LUKS" in output("lsblk", "--noheadings", "-o", "FSTYPE")
 
 

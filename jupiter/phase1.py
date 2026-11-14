@@ -3,23 +3,37 @@
 The steps are the Arch Linux Installation guide's, with archinstall's
 defaults: GPT with a 1 GiB EFI system partition at /boot, Btrfs subvolumes
 for everything else, swap on zram and systemd-boot.
+
+The system's Btrfs is on LUKS2 unless you decline it: a passphrase opens it
+at boot, typed in the console keymap you chose. Other disks can be erased
+and encrypted as data disks, mounted where you say: each opens with a key
+file on the encrypted system (/etc/cryptsetup-keys.d), the passphrase being
+its fallback, and a missing one does not stop the boot. A disk you do not
+choose is never written to or opened.
 """
 
 import getpass
 import json
+import os
 import pwd
 import re
 import shutil
+import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .common import INSTALLER_DIR, LIVE, output, run
+from . import secureboot
+from .common import INSTALLER_DIR, LIVE, output, run, succeeds, warn
 
 MNT = Path("/mnt")
 EFI = Path("/sys/firmware/efi")
 LOCALE_GEN = Path("/etc/locale.gen")  # the live ISO's, listing every locale
 ROOT_TYPE = "4f68bce3-e8cd-4db1-96e7-fbcaf984b709"  # Linux x86-64 root (/)
+DATA_TYPE = "0fc63daf-8483-4772-8e79-3d69d8477de4"  # Linux filesystem data
+ROOT_VOLUME = "root"  # /dev/mapper/root, the encrypted system
+KEYS = Path("etc/cryptsetup-keys.d")  # a data disk's key file, root's only
 SUBVOLUMES = {
     "@": "",
     "@home": "home",
@@ -39,6 +53,9 @@ BASE = [
     "git",
     "python",
 ]
+# Encrypted, sbctl for the Secure Boot keys and signatures, and the TPM's
+# library, which systemd-cryptsetup opens to unlock with it.
+ENCRYPTED_BASE = ["sbctl", "tpm2-tss"]
 MICROCODE = {"GenuineIntel": "intel-ucode", "AuthenticAMD": "amd-ucode"}
 GRAPHICS = {
     "0x8086": ["mesa", "vulkan-intel", "intel-media-driver"],
@@ -57,15 +74,46 @@ KBD_MODEL_MAP = Path("/usr/share/systemd/kbd-model-map")
 XKB = ("XKBLAYOUT", "XKBMODEL", "XKBVARIANT", "XKBOPTIONS")
 # The initramfs only has to find the root file system. Without kms the
 # graphics driver loads beside the rest of the system instead of before it,
-# and Btrfs needs no fsck. Nothing is typed there (no encryption), so the
+# and Btrfs needs no fsck. Unencrypted, nothing is typed there, so the
 # console's keymap and font can wait for systemd-vconsole-setup too.
 HOOKS = "base udev autodetect microcode modconf keyboard block filesystems"
+# Encrypted, systemd's initramfs opens the root (sd-encrypt, from
+# /etc/crypttab's x-initrd.attach lines) and asks for the passphrase in the
+# console keymap (sd-vconsole). keyboard comes before autodetect, so every
+# keyboard driver is in, not only those of the keyboard plugged in now: the
+# passphrase may be typed on another. No busybox (base): no shell there, and
+# systemd's hook locks root in the initramfs (root:* in its /etc/shadow), so
+# its emergency shell refuses: a volume that will not open stops the boot.
+ENCRYPTED_HOOKS = (
+    "systemd keyboard autodetect microcode modconf sd-vconsole block "
+    "sd-encrypt filesystems"
+)
 MIN_DISK_GIB = 16  # smaller ones, like floppies, cannot take the system
+MIN_DATA_GIB = 1
+# Where a data disk may be mounted: a new folder, not one the system owns.
+MOUNT_POINT = re.compile(r"(/[a-z0-9][a-z0-9._-]*)+")
+SYSTEM_FOLDERS = {
+    "bin", "boot", "dev", "efi", "etc", "home", "lib", "lib64", "opt",
+    "proc", "root", "run", "sbin", "sys", "tmp", "usr", "var",
+}  # fmt: skip
 HOSTNAME = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 USERNAME = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 # The account greetd's package makes for the login screen in phase 2, which
 # keeps a user of that name instead: the login screen would run as them.
 RESERVED = {"greeter"}
+
+
+@dataclass
+class DataDisk:
+    """A disk to erase and encrypt for data, and where it is mounted."""
+
+    disk: str
+    mount: str
+
+    @property
+    def name(self) -> str:
+        """Its volume's name in /dev/mapper and its key file's."""
+        return self.mount.strip("/").replace("/", "-")
 
 
 def main() -> None:
@@ -77,7 +125,16 @@ def main() -> None:
     if MNT.is_mount():
         run("umount", "--recursive", MNT)
 
-    disk = _choose_disk()
+    firmware = secureboot.state(EFI / "efivars")
+    if firmware == "none":
+        print(secureboot.NO_SECURE_BOOT_HELP)
+    elif firmware != "setup":
+        print(secureboot.SETUP_MODE_HELP)
+    devices = _devices()
+    disk = _choose_disk(devices)
+    encrypt = _yes(f"Encrypt {disk}? [Y/n] ", default=True)
+    passphrase = _new_password("the disk", "Passphrase") if encrypt else ""
+    data = _choose_data_disks(devices, disk) if encrypt else []
     hostname = _ask("Hostname", "archlinux", HOSTNAME.fullmatch)
     user = _ask("Username", "", _is_new_user)
     passwords = {user: _new_password(user), "root": _new_password("root")}
@@ -86,22 +143,55 @@ def main() -> None:
     locale = _ask("Locale", "en_US.UTF-8", _is_locale)
     keymaps = _listed("localectl", "list-keymaps")
     keymap = _ask("Keymap", "us", keymaps)
-    if input(f"Erase everything on {disk}? [y/N] ").strip().lower() != "y":
+    if not _yes(f"Erase everything on {disk}? [y/N] ", default=False):
         raise SystemExit("Nothing was changed.")
 
     esp, root = _partition(disk)
+    crypttab = ""
+    if encrypt:
+        luks = _encrypt(root, ROOT_VOLUME, passphrase)
+        root = f"/dev/mapper/{ROOT_VOLUME}"
+        # Its volume key measured into PCR 15 when it opens, which the TPM
+        # binding (phase 4) relies on.
+        options = "discard,x-initrd.attach,tpm2-measure-pcr=yes"
+        crypttab = f"{ROOT_VOLUME} UUID={luks} none {options}\n"
     _mount(esp, root)
-    _write_settings(hostname, timezone, locale, keymap)
+    _write_settings(hostname, timezone, locale, keymap, encrypt)
+    if encrypt:
+        _write_kernel_image_settings()
+    mounts = ""
+    for volume in data:
+        luks, filesystem = _make_data_disk(volume, passphrase)
+        key = Path("/", KEYS, f"{volume.name}.key")
+        # A missing data disk is waited for 10 s, not systemd's 90, and never
+        # holds up the boot (nofail): data disks are internal, there or not.
+        wait = "nofail,x-systemd.device-timeout=10s"
+        crypttab += f"{volume.name} UUID={luks} {key} discard,{wait}\n"
+        options = f"compress=zstd,{wait}"
+        mounts += f"UUID={filesystem} {volume.mount} btrfs {options} 0 0\n"
     graphics = drivers()
     if "nvidia-open" in graphics and "mesa" not in graphics:  # NVIDIA only
         env = MNT / "etc/xdg/uwsm/env-hyprland"  # uwsm reads it for Hyprland
         env.parent.mkdir(parents=True)
         env.write_text(NVIDIA_ENV)
-    run("pacstrap", "-K", MNT, *BASE, *graphics)
+    extra = ENCRYPTED_BASE if encrypt else []
+    run("pacstrap", "-K", MNT, *BASE, *extra, *graphics)
     with (MNT / "etc/fstab").open("a") as fstab:
-        fstab.write(output("genfstab", "-U", MNT))
+        fstab.write(output("genfstab", "-U", MNT) + mounts)
+    if encrypt:
+        # After pacstrap: systemd's package ships an empty one.
+        (MNT / "etc/crypttab").write_text(crypttab)
     _configure(user, passwords, locale)
-    _install_boot_loader()
+    for volume in data:
+        _own(volume, user)
+    if encrypt:
+        _sign_boot(firmware)
+    _install_boot_loader(entry=not encrypt)
+    if encrypt:
+        # The image pacstrap built had no crypttab to open the root by, and
+        # no keys to be signed with.
+        _chroot("mkinitcpio", "--allpresets")
+        _chroot("systemctl", "enable", "systemd-boot-update.service")
     _copy_installer(user)
 
 
@@ -114,12 +204,17 @@ def _ask(question: str, default: str, valid: Callable[[str], object]) -> str:
         print(f"{answer!r} is not a valid {question.lower()}.")
 
 
-def _new_password(user: str) -> str:
+def _yes(question: str, default: bool) -> bool:
+    answer = input(question).strip().lower()
+    return answer.startswith("y") if answer else default
+
+
+def _new_password(user: str, kind: str = "Password") -> str:
     while True:
-        password = getpass.getpass(f"Password for {user}: ")
+        password = getpass.getpass(f"{kind} for {user}: ")
         if password and password == getpass.getpass("Repeat it: "):
             return password
-        print("The passwords were empty or did not match.")
+        print(f"The {kind.lower()}s were empty or did not match.")
 
 
 def _is_new_user(name: str) -> bool:
@@ -135,17 +230,82 @@ def _listed(*command: str) -> Callable[[str], bool]:
     return set(output(*command).split()).__contains__
 
 
-def _choose_disk() -> str:
-    columns = "NAME,SIZE,MODEL,TYPE,MOUNTPOINTS"
+def _devices() -> list[dict[str, Any]]:
+    columns = "NAME,SIZE,MODEL,TYPE,MOUNTPOINTS,FSTYPE,PTTYPE"
     lsblk = ["lsblk", "--json", "--bytes", "--paths", "-o", columns]
-    disks = targets(json.loads(output(*lsblk))["blockdevices"])
+    devices: list[dict[str, Any]] = json.loads(output(*lsblk))["blockdevices"]
+    return devices
+
+
+def _choose_disk(devices: list[dict[str, Any]]) -> str:
+    disks = targets(devices)
     if not disks:
         raise SystemExit(f"No unused disk has {MIN_DISK_GIB} GiB or more.")
     for disk in disks:
-        size = disk["size"] // 2**30
-        print(f"  {disk['name']}  {size} GiB  {disk['model'] or ''}")
+        print(f"  {_describe(disk)}")
     names = {disk["name"] for disk in disks}
     return _ask("Disk", disks[0]["name"], names.__contains__)
+
+
+def _describe(disk: dict[str, Any]) -> str:
+    size = disk["size"] // 2**30
+    return f"{disk['name']}  {size} GiB  {disk['model'] or ''}".rstrip()
+
+
+def _choose_data_disks(
+    devices: list[dict[str, Any]], system: str
+) -> list[DataDisk]:
+    """Ask, disk by disk, which others to erase and encrypt for data.
+
+    Only an empty disk is offered: one with a file system or a partition
+    table (Windows', say) or anything mounted is listed as left alone.
+    """
+    others = [
+        device
+        for device in devices
+        if device["type"] == "disk"
+        and device["name"] != system
+        and device["size"] >= MIN_DATA_GIB * 2**30
+    ]
+    chosen: list[DataDisk] = []
+    for disk in others:
+        if _in_use(disk) or _holds(disk):
+            what = "in use" if _in_use(disk) else ", ".join(_holds(disk))
+            print(f"  {_describe(disk)}: left alone ({what})")
+            continue
+        question = f"Erase and encrypt {_describe(disk)} for data? [y/N] "
+        if not _yes(question, default=False):
+            continue
+        taken = {volume.mount for volume in chosen}
+        number = len(chosen) + 1
+        default = "/data" if number == 1 else f"/data{number}"
+        mount = _ask("Mount it at", default, _mount_point(taken))
+        if _yes(f"Erase everything on {disk['name']}? [y/N] ", default=False):
+            chosen.append(DataDisk(disk["name"], mount))
+    return chosen
+
+
+def _holds(device: dict[str, Any]) -> list[str]:
+    """The partition table and file systems on a device, if any."""
+    found = [kind for key in ("pttype", "fstype") if (kind := device.get(key))]
+    for child in device.get("children", []):
+        found += [kind for kind in _holds(child) if kind not in found]
+    return found
+
+
+def _mount_point(taken: set[str]) -> Callable[[str], bool]:
+    """Whether a path can take a data disk: a new folder, not the system's
+    and not another data disk's."""
+
+    def valid(path: str) -> bool:
+        return (
+            bool(MOUNT_POINT.fullmatch(path))
+            and path.split("/")[1] not in SYSTEM_FOLDERS
+            and path not in taken
+            and DataDisk("", path).name != ROOT_VOLUME
+        )
+
+    return valid
 
 
 def targets(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -174,6 +334,84 @@ def _partition(disk: str) -> tuple[str, str]:
     return esp, root
 
 
+def _encrypt(partition: str, name: str, passphrase: str) -> str:
+    """LUKS2 on a partition, opened as /dev/mapper/name; returns its UUID.
+
+    The passphrase goes on stdin, as typed: no newline after it, as none
+    follows it when it is typed at boot.
+    """
+    luks = str(uuid.uuid4())
+    key = ["--key-file=-"]
+    run(
+        "cryptsetup",
+        "luksFormat",
+        "--type=luks2",
+        "--batch-mode",
+        f"--uuid={luks}",
+        *key,
+        partition,
+        data=passphrase,
+    )
+    run("cryptsetup", "open", *key, partition, name, data=passphrase)
+    return luks
+
+
+def _make_data_disk(volume: DataDisk, passphrase: str) -> tuple[str, str]:
+    """Erase a data disk: one partition, LUKS2 opened by a key file of its
+    own or the passphrase, and Btrfs. Returns the LUKS and Btrfs UUIDs."""
+    wipe = ["--wipe", "always", "--wipe-partitions", "always"]
+    run("sfdisk", *wipe, volume.disk, data=f"label: gpt\ntype={DATA_TYPE}\n")
+    run("udevadm", "settle")
+    table = json.loads(output("sfdisk", "--json", volume.disk))
+    partition = table["partitiontable"]["partitions"][0]["node"]
+    luks = _encrypt(partition, volume.name, passphrase)
+    keys = MNT / KEYS
+    keys.mkdir(mode=0o700, exist_ok=True)
+    key = keys / f"{volume.name}.key"
+    # Created 0400, so no one else could ever read it, then filled.
+    with os.fdopen(
+        os.open(key, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400), "wb"
+    ) as file:
+        file.write(os.urandom(64))
+    # Random already: a key derivation that costs no time at boot. Slot 1,
+    # tried first (prefer): otherwise the key file is first tried against
+    # the passphrase's slot, whose Argon2id takes seconds and a GiB.
+    run(
+        "cryptsetup",
+        "luksAddKey",
+        "--batch-mode",
+        "--pbkdf=pbkdf2",
+        "--pbkdf-force-iterations=1000",
+        "--new-key-slot=1",
+        "--key-file=-",
+        partition,
+        key,
+        data=passphrase,
+    )
+    run("cryptsetup", "config", "--key-slot=1", "--priority=prefer", partition)
+    filesystem = str(uuid.uuid4())
+    run(
+        "mkfs.btrfs",
+        "--force",
+        f"--uuid={filesystem}",
+        f"/dev/mapper/{volume.name}",
+    )
+    return luks, filesystem
+
+
+def _own(volume: DataDisk, user: str) -> None:
+    """Mount a data disk where it goes and give its top folder to the user."""
+    run(
+        "mount",
+        "--mkdir",
+        "-o",
+        "compress=zstd",
+        f"/dev/mapper/{volume.name}",
+        MNT / volume.mount.lstrip("/"),
+    )
+    _chroot("chown", f"{user}:", volume.mount)
+
+
 def _mount(esp: str, root: str) -> None:
     run("mkfs.fat", "-F", "32", esp)
     run("mkfs.btrfs", "--force", root)
@@ -187,7 +425,7 @@ def _mount(esp: str, root: str) -> None:
 
 
 def _write_settings(
-    hostname: str, timezone: str, locale: str, keymap: str
+    hostname: str, timezone: str, locale: str, keymap: str, encrypt: bool
 ) -> None:
     """Write the settings no package owns.
 
@@ -196,7 +434,8 @@ def _write_settings(
     etc = MNT / "etc"
     (etc / "systemd").mkdir(parents=True)
     (etc / "mkinitcpio.conf.d").mkdir()
-    (etc / "mkinitcpio.conf.d/jupiter.conf").write_text(f"HOOKS=({HOOKS})\n")
+    hooks = ENCRYPTED_HOOKS if encrypt else HOOKS
+    (etc / "mkinitcpio.conf.d/jupiter.conf").write_text(f"HOOKS=({hooks})\n")
     (etc / "hostname").write_text(f"{hostname}\n")
     (etc / "locale.conf").write_text(f"LANG={locale}\n")
     xkb = keyboard(keymap, KBD_MODEL_MAP.read_text())
@@ -252,20 +491,54 @@ def _configure(user: str, passwords: dict[str, str], locale: str) -> None:
     _chroot("systemctl", "enable", "NetworkManager", "systemd-timesyncd")
 
 
-def _install_boot_loader() -> None:
-    _chroot("bootctl", "install")
+def _command_line() -> str:
     uuid = output("findmnt", "--noheadings", "-o", "UUID", MNT).strip()
-    entry = MNT / "boot/loader/entries/arch.conf"
-    entry.parent.mkdir(parents=True, exist_ok=True)
-    entry.write_text(
-        "title   Arch Linux\n"
-        "linux   /vmlinuz-linux\n"
-        "initrd  /initramfs-linux.img\n"
-        f"options root=UUID={uuid} rootflags=subvol=@ rw zswap.enabled=0"
-        " quiet loglevel=3\n"
+    return (
+        f"root=UUID={uuid} rootflags=subvol=@ rw zswap.enabled=0"
+        " quiet loglevel=3"
     )
+
+
+def _write_kernel_image_settings() -> None:
+    """A unified kernel image, with its command line in it, is all mkinitcpio
+    builds; before pacstrap, which builds the first (or mkinitcpio would
+    take the live ISO's command line)."""
+    (MNT / "etc/kernel").mkdir()
+    (MNT / "etc/kernel/cmdline").write_text(f"{_command_line()}\n")
+    (MNT / "etc/mkinitcpio.d").mkdir()
+    (MNT / "etc/mkinitcpio.d/linux.preset").write_text(secureboot.PRESET)
+
+
+def _sign_boot(firmware: str) -> None:
+    """Secure Boot keys of the new system's own, enrolled if the firmware
+    lets them be, and systemd-boot signed: bootctl installs the signed copy,
+    and sbctl signs it again whenever systemd updates it."""
+    _chroot("sbctl", "create-keys")
+    enroll: list[str | Path] = ["arch-chroot", "-S", MNT]
+    enroll += ["sbctl", "enroll-keys", "--microsoft"]
+    if firmware == "setup" and not succeeds(*enroll):
+        warn("Could not enrol the Secure Boot keys: phase 4 says what is left")
+    boot = str(secureboot.BOOT_EFI)
+    signed = str(secureboot.SIGNED_BOOT_EFI)
+    _chroot("sbctl", "sign", "--save", "--output", signed, boot)
+
+
+def _install_boot_loader(entry: bool = True) -> None:
+    """systemd-boot, with a loader entry for the kernel and its initramfs
+    unencrypted; encrypted, it finds the unified kernel image by itself."""
+    _chroot("bootctl", "install")
+    if entry:
+        path = MNT / "boot/loader/entries/arch.conf"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "title   Arch Linux\n"
+            "linux   /vmlinuz-linux\n"
+            "initrd  /initramfs-linux.img\n"
+            f"options {_command_line()}\n"
+        )
     # No menu to wait at: holding Space at power-on still brings it up.
     loader = MNT / "boot/loader/loader.conf"
+    loader.parent.mkdir(parents=True, exist_ok=True)
     text = loader.read_text() if loader.exists() else ""
     if not re.search(r"^timeout\b", text, re.MULTILINE):
         loader.write_text(text + "timeout 0\n")
