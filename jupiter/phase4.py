@@ -3,9 +3,13 @@
 Clones them into your home, links every folder of their .config/ into
 ~/.config/ and .config/.zshrc to ~/.zshrc, then sets up what they expect
 around them: the shell's notification server, the first theme, their udev
-rules and pacman hooks, the login screen, a fingerprint where there is a
+rules and pacman hooks, the login screen, on an encrypted system an
+unencrypted login keyring (keyring.py), a fingerprint where there is a
 reader, and zsh. Whatever a link would replace is moved to
-~/.dotfiles-backup/<time>/. Safe to run again.
+~/.dotfiles-backup/<time>/. Last, on an encrypted system, the TPM is bound
+to unlock the disk at boot, or what is still missing for it is said
+(tpm.py). Safe to run again, and run again after a firmware update that
+asked for the passphrase at boot.
 """
 
 import os
@@ -16,6 +20,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from . import keyring, tpm
 from .common import log, run, succeeds, warn
 from .config import DOTFILES_PUSH_URL, DOTFILES_REPO
 
@@ -24,8 +29,12 @@ CONFIG = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config")
 ZSH = Path("/usr/bin/zsh")
 NOTIFICATION_DAEMONS = ["dunst.service", "mako.service", "swaync.service"]
 SUDO_PAM = Path("/etc/pam.d/sudo")
-# First in sudo's stack: a finger is enough, and after three failed matches,
-# a timeout or with no print enrolled, sudo asks for the password as before.
+# polkit's own stack is /usr/lib/pam.d/polkit-1, which one in /etc replaces.
+POLKIT_PAM = Path("/etc/pam.d/polkit-1")
+POLKIT_VENDOR_PAM = Path("/usr/lib/pam.d/polkit-1")
+# First in sudo's and polkit's stacks: a finger is enough, and after three
+# failed matches, a timeout or with no print enrolled, the password is asked
+# for as before.
 FINGERPRINT = "auth       sufficient   pam_fprintd.so\n"
 
 
@@ -39,8 +48,10 @@ def main() -> None:
     _render_theme(repo)
     _install_system(repo)
     _install_greeter(repo)
+    keyring.main()
     _fingerprint()
     _use_zsh()
+    tpm.main()
 
 
 def _fetch(repo: Path) -> None:
@@ -126,10 +137,12 @@ def _install_greeter(repo: Path) -> None:
 
 
 def _fingerprint() -> None:
-    """Where fprintd finds a reader: enroll a finger, and let sudo take it.
+    """Where fprintd finds a reader: enroll a finger, and let sudo and
+    polkit's prompts take it.
 
-    The dotfiles' lock screen listens for a finger by itself. Logging in
-    stays with the password, which is what unlocks the keyring.
+    The dotfiles' lock screen listens for a finger by itself, and their login
+    screen takes one for Enter on an empty field; the login keyring, kept
+    unencrypted (keyring.py), opens either way.
     """
     if shutil.which("fprintd-list") is None:
         return
@@ -145,11 +158,22 @@ def _fingerprint() -> None:
         return
     if "no fingers enrolled" in listed.stdout:
         answer = input(
-            "Enroll a fingerprint, for the lock screen and sudo? [Y/n] "
+            "Enroll a fingerprint, to log in, unlock, and for sudo and "
+            "polkit? [Y/n] "
         )
         if answer.strip().lower() != "n" and not succeeds("fprintd-enroll"):
             warn("No fingerprint enrolled: run fprintd-enroll later")
-    text = SUDO_PAM.read_text()
+    for stack, vendor in ((SUDO_PAM, None), (POLKIT_PAM, POLKIT_VENDOR_PAM)):
+        _take_a_finger(stack, vendor)
+
+
+def _take_a_finger(stack: Path, vendor: Path | None) -> None:
+    """Put pam_fprintd first in a PAM stack, from the one in /etc or else
+    the package's, keeping the old file as stack~."""
+    source = stack if stack.exists() else vendor
+    if source is None or not source.exists():
+        return
+    text = source.read_text()
     if "pam_fprintd" in text:
         return
     lines = text.splitlines(keepends=True)
@@ -158,9 +182,9 @@ def _fingerprint() -> None:
     with tempfile.NamedTemporaryFile("w", suffix=".pam") as new:
         new.write("".join(lines))
         new.flush()
-        # -b keeps the old one as sudo~.
-        run("sudo", "install", "-b", "-m", "0644", new.name, SUDO_PAM)
-    log("sudo takes a fingerprint too")
+        # -b keeps the old one as stack~.
+        run("sudo", "install", "-b", "-m", "0644", new.name, stack)
+    log(f"{stack.name} takes a fingerprint too")
 
 
 def _use_zsh() -> None:
