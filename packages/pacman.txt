@@ -1,6 +1,6 @@
-# Phase 3: your own packages from the official repositories, e.g. steam
-# (enable [multilib] in /etc/pacman.conf first). One per line, `#` starts
-# a comment.
+# Phase 3: your own packages from the official repositories. One per line,
+# `#` starts a comment. A package only [multilib] has (steam) gets [multilib]
+# enabled in /etc/pacman.conf by phase 3.
 
 docker
 nextcloud-client
@@ -17,6 +17,12 @@ keepassxc
 prismlauncher
 btop
 fastfetch
+steam
+mpv
+android-tools
+# A firewall; phase 3 opens KDE Connect's ports in it. Enabling it and its
+# other rules are yours: `sudo ufw enable`.
+ufw
 
 # What the checks (./check.sh in each Jupiter repo) run: ruff formats and
 # lints the Python, mypy checks its types (with the stubs of the libraries the
@@ -31,3 +37,8 @@ shellcheck
 shfmt
 stylua
 lua-language-server
+# What Jupiter-testing's scripts/vm.sh installs Jupiter in: a VM with Secure
+# Boot firmware and a TPM. Its suite is skipped where they are missing.
+qemu-system-x86
+swtpm
+edk2-ovmf

@@ -28,7 +28,7 @@ Already on Arch? Clone this repo and run `bootstrap.sh 2 3 4` as your user. Any 
 |---|---|
 | **1** | The base system, from the live ISO: erases the disk you pick, then Btrfs (on LUKS2 unless you decline), systemd-boot with a signed kernel image and Secure Boot keys of your own, swap on zram, drivers for your GPUs and your user; other empty disks only if you choose them, as encrypted data disks |
 | **2** | The desktop: `packages/core.txt` and the services it needs |
-| **3** | Your own packages: `packages/pacman.txt`, and `packages/aur.txt` through paru |
+| **3** | Your own packages: `packages/pacman.txt` (with [multilib] enabled where one needs it, such as steam), and `packages/aur.txt` through paru. Where ufw is installed it gets KDE Connect's rules; turning it on is yours: `sudo ufw enable` |
 | **4** | The dotfiles: cloned and linked into place, with the login screen, an unencrypted login keyring on an encrypted disk, a fingerprint where there is a reader (login screen, sudo, polkit) and zsh; last, the TPM bound to unlock the disk, or what is still missing for it. Safe to run again |
 
 A package that fails to install is skipped, and named again at the end. What each phase does in detail: [Installing](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki/Installing).
