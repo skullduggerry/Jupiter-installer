@@ -6,6 +6,8 @@ Part of Jupiter: [Jupiter-dotfiles](https://codeberg.org/skullduggery/Jupiter-do
 
 ## Installing
 
+For the TPM to unlock the disk at boot, Secure Boot needs keys of the system's own: before booting the ISO, erase the Secure Boot keys in the firmware's setup (Setup Mode), and phase 1 enrols the new ones, Microsoft's beside them. Phase 1 says so if the firmware is not in Setup Mode; you can go on, and phase 4 tells you what is left. Without a TPM or Secure Boot, the disk asks for its passphrase at boot.
+
 Boot the [Arch ISO](https://archlinux.org/download/) in UEFI mode and connect to the internet (`iwctl` for Wi-Fi). If your keyboard is not US, load its layout with `loadkeys` first, so your passwords are typed as you will type them later. Then, as root:
 
 ```bash
@@ -24,10 +26,10 @@ Already on Arch? Clone this repo and run `bootstrap.sh 2 3 4` as your user. Any 
 
 | Phase | What |
 |---|---|
-| **1** | The base system, from the live ISO: erases the disk you pick, then Btrfs, systemd-boot, swap on zram, drivers for your GPUs and your user |
+| **1** | The base system, from the live ISO: erases the disk you pick, then Btrfs (on LUKS2 unless you decline), systemd-boot with a signed kernel image and Secure Boot keys of your own, swap on zram, drivers for your GPUs and your user; other empty disks only if you choose them, as encrypted data disks |
 | **2** | The desktop: `packages/core.txt` and the services it needs |
 | **3** | Your own packages: `packages/pacman.txt`, and `packages/aur.txt` through paru |
-| **4** | The dotfiles: cloned and linked into place, with the login screen and zsh. Safe to run again |
+| **4** | The dotfiles: cloned and linked into place, with the login screen, an unencrypted login keyring on an encrypted disk, a fingerprint where there is a reader (login screen, sudo, polkit) and zsh; last, the TPM bound to unlock the disk, or what is still missing for it. Safe to run again |
 
 A package that fails to install is skipped, and named again at the end. What each phase does in detail: [Installing](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki/Installing).
 
@@ -49,3 +51,4 @@ Each Jupiter repo has this `check.sh`, with the same arguments, and `bootstrap.s
 ## Documentation
 
 - [The wiki](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki), shared by the three repos: installing, customising, development.
+- [Encrypting an existing install](docs/encrypt-an-existing-install.md): a system phase 1 installed before it encrypted, encrypted in place from the live ISO.
