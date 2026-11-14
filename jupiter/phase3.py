@@ -10,6 +10,7 @@ Connect's ports are opened to the local networks; turning ufw on is yours
 
 import re
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -26,6 +27,14 @@ from .common import (
 
 PARU = "https://aur.archlinux.org/paru.git"
 PACMAN_CONF = Path("/etc/pacman.conf")
+# The 32-bit drivers of the graphics drivers phase 1 installs.
+LIB32 = {
+    "mesa": "lib32-mesa",
+    "vulkan-radeon": "lib32-vulkan-radeon",
+    "vulkan-intel": "lib32-vulkan-intel",
+    "vulkan-nouveau": "lib32-vulkan-nouveau",
+    "nvidia-utils": "lib32-nvidia-utils",
+}
 # Arch's pacman.conf ships [multilib] commented out.
 MULTILIB_OFF = re.compile(
     r"^#\[multilib\]\n#(Include = /etc/pacman\.d/mirrorlist)$", re.MULTILINE
@@ -42,8 +51,9 @@ def main() -> None:
     build_tools = ["base-devel", "git"] if aur else []
     run("sudo", "pacman", "-Syu", "--noconfirm")
     _multilib(packages("pacman.txt"))
+    lib32 = _lib32_drivers(packages("pacman.txt"))
     pacman = ["sudo", "pacman", "-S", "--needed", "--noconfirm"]
-    install(pacman, [*build_tools, *packages("pacman.txt")])
+    install(pacman, [*build_tools, *lib32, *packages("pacman.txt")])
     _open_kdeconnect()
     if aur and not (shutil.which("paru") or _build_paru()):
         skip(["paru", *aur])
@@ -69,6 +79,23 @@ def _multilib(names: list[str]) -> None:
     # All repositories at once: a bare -Sy would make a partial upgrade.
     run("sudo", "pacman", "-Syu", "--noconfirm")
     log(f"Enabled [multilib] in {PACMAN_CONF}, for {' '.join(unknown)}")
+
+
+def _lib32_drivers(names: list[str]) -> list[str]:
+    """Where a listed package comes from [multilib] (steam): the 32-bit
+    drivers of the graphics drivers installed. Without them pacman's
+    --noconfirm takes the first provider of lib32-vulkan-driver, NVIDIA's,
+    whatever the machine's card."""
+    listed = subprocess.run(
+        ["pacman", "-Slq", "multilib"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if listed.returncode or not set(listed.stdout.split()) & set(names):
+        return []
+    installed = set(output("pacman", "-Qq").split())
+    return [lib32 for name, lib32 in LIB32.items() if name in installed]
 
 
 def _open_kdeconnect() -> None:

@@ -14,7 +14,7 @@ Boot the [Arch ISO](https://archlinux.org/download/) in UEFI mode and connect to
 curl -fsSL https://codeberg.org/skullduggery/Jupiter-installer/raw/branch/main/bootstrap.sh | bash
 ```
 
-This runs phases 1 and 2. Reboot, log in as the user phase 1 created, and run the copy it left in your home, which updates itself and runs phases 3 and 4:
+This runs phases 1 and 2. Reboot: the disk asks for its passphrase (until phase 4 binds it to the TPM), and a text console asks you to log in, since the login screen comes with phase 4. Log in as the user phase 1 created and run the copy it left in your home, which updates itself and runs phases 3 and 4:
 
 ```bash
 ~/Jupiter-installer/bootstrap.sh

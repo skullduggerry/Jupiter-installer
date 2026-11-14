@@ -182,7 +182,8 @@ def _fixate(name: str, device: str) -> bool:
     PCR 15 and expects the key it has; True if the line changed (and the
     image was built again)."""
     uuid = output("sudo", "cryptsetup", "luksUUID", device).strip()
-    lines = CRYPTTAB.read_text().splitlines(keepends=True)
+    # Root's alone (0600, as systemd's package ships it): read through sudo.
+    lines = output("sudo", "cat", CRYPTTAB).splitlines(keepends=True)
     for index, line in enumerate(lines):
         fields = line.split()
         if not fields or fields[0] != name:
