@@ -39,6 +39,16 @@ TPM_UNITS = [
 ]
 
 REGDOM = "/etc/conf.d/wireless-regdom"
+# The folders xdg-user-dirs makes in a home at its first login, and points
+# apps at: Downloads, and Screenshots as the pictures folder, where hyprshot
+# saves. The others (Documents, Music, ...) are not made, so a folder synced
+# from elsewhere, such as Nextcloud's, can take their names.
+USER_DIRS = "/etc/xdg/user-dirs.defaults"
+USER_DIRS_DEFAULTS = """\
+# Written by Jupiter's phase 2: the folders a new home gets.
+DOWNLOAD=Downloads
+PICTURES=Screenshots
+"""
 
 
 def country(root: Path) -> str | None:
@@ -74,6 +84,9 @@ def main() -> None:
     units = [unit for name, unit in USER_UNITS.items() if name not in skipped]
     if units:
         run(*target, "systemctl", "--global", "enable", *units)
+    if "xdg-user-dirs" not in skipped:
+        write = f"cat > {USER_DIRS}"
+        run(*target, "sh", "-c", write, data=USER_DIRS_DEFAULTS)
     if not encrypted():
         run(*target, "systemctl", "mask", *TPM_UNITS)
     # Wi-Fi drivers that do not set their country themselves use the
