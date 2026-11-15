@@ -10,6 +10,13 @@ and encrypted as data disks, mounted where you say: each opens with a key
 file on the encrypted system (/etc/cryptsetup-keys.d), the passphrase being
 its fallback, and a missing one does not stop the boot. A disk you do not
 choose is never written to or opened.
+
+The keymap is asked first and loaded at once, so the passphrase and the
+passwords are typed in the layout they will be asked in at boot. A rerun
+after a failure closes what the failed attempt left open, and offers again
+the data disks it had begun to erase (as /run, which lasts until the live
+ISO is shut down, remembers). The Wi-Fi networks the live ISO joined (with
+iwctl) are joined by the new system too, through NetworkManager.
 """
 
 import getpass
@@ -18,6 +25,7 @@ import os
 import pwd
 import re
 import shutil
+import subprocess
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -28,6 +36,14 @@ from . import secureboot
 from .common import INSTALLER_DIR, LIVE, output, run, succeeds, warn
 
 MNT = Path("/mnt")
+# The disks this live session erased, so a rerun after a failure can erase
+# them again: /run is the ISO's, gone once it shuts down.
+ERASED = Path("/run/jupiter-erased")
+# iwd's saved networks on the live ISO, and NetworkManager's on the system.
+IWD = Path("/var/lib/iwd")
+NM_CONNECTIONS = Path("etc/NetworkManager/system-connections")
+# iwd's file name for a network whose name is only these (others: =hex).
+IWD_PLAIN_NAME = re.compile(r"[A-Za-z0-9 _-]+")
 EFI = Path("/sys/firmware/efi")
 LOCALE_GEN = Path("/etc/locale.gen")  # the live ISO's, listing every locale
 ROOT_TYPE = "4f68bce3-e8cd-4db1-96e7-fbcaf984b709"  # Linux x86-64 root (/)
@@ -125,12 +141,17 @@ def main() -> None:
     if MNT.is_mount():
         run("umount", "--recursive", MNT)
 
+    keymaps = _listed("localectl", "list-keymaps")
+    keymap = _ask("Keymap", "us", keymaps)
+    # The console's own, for the passwords below: as typed at boot. Not a
+    # console (over SSH, a serial line), characters arrive as they are.
+    subprocess.run(["loadkeys", keymap], check=False, capture_output=True)
     firmware = secureboot.state(EFI / "efivars")
     if firmware == "none":
         print(secureboot.NO_SECURE_BOOT_HELP)
     elif firmware != "setup":
         print(secureboot.SETUP_MODE_HELP)
-    devices = _devices()
+    devices = _close_leftovers(_devices())
     disk = _choose_disk(devices)
     encrypt = _yes(f"Encrypt {disk}? [Y/n] ", default=True)
     passphrase = _new_password("the disk", "Passphrase") if encrypt else ""
@@ -141,8 +162,6 @@ def main() -> None:
     zones = _listed("timedatectl", "list-timezones")
     timezone = _ask("Time zone", "UTC", zones)
     locale = _ask("Locale", "en_US.UTF-8", _is_locale)
-    keymaps = _listed("localectl", "list-keymaps")
-    keymap = _ask("Keymap", "us", keymaps)
     if not _yes(f"Erase everything on {disk}? [y/N] ", default=False):
         raise SystemExit("Nothing was changed.")
 
@@ -182,6 +201,7 @@ def main() -> None:
         # After pacstrap: systemd's package ships an empty one.
         (MNT / "etc/crypttab").write_text(crypttab)
     _configure(user, passwords, locale)
+    _carry_wifi()
     for volume in data:
         _own(volume, user)
     if encrypt:
@@ -242,9 +262,12 @@ def _choose_disk(devices: list[dict[str, Any]]) -> str:
     if not disks:
         raise SystemExit(f"No unused disk has {MIN_DISK_GIB} GiB or more.")
     for disk in disks:
-        print(f"  {_describe(disk)}")
+        held = ", ".join(_holds(disk)) or "empty"
+        print(f"  {_describe(disk)}  ({held})")
     names = {disk["name"] for disk in disks}
-    return _ask("Disk", disks[0]["name"], names.__contains__)
+    # More than one: no default, as Enter could pick another system's disk.
+    default = disks[0]["name"] if len(disks) == 1 else ""
+    return _ask("Disk", default, names.__contains__)
 
 
 def _describe(disk: dict[str, Any]) -> str:
@@ -257,9 +280,11 @@ def _choose_data_disks(
 ) -> list[DataDisk]:
     """Ask, disk by disk, which others to erase and encrypt for data.
 
-    Only an empty disk is offered: one with a file system or a partition
-    table (Windows', say) or anything mounted is listed as left alone.
+    Only an empty disk is offered, or one an earlier attempt from this
+    live ISO erased: one with a file system or a partition table (Windows',
+    say) or anything mounted is listed as left alone.
     """
+    erased = _erased()
     others = [
         device
         for device in devices
@@ -269,7 +294,7 @@ def _choose_data_disks(
     ]
     chosen: list[DataDisk] = []
     for disk in others:
-        if _in_use(disk) or _holds(disk):
+        if _in_use(disk) or (_holds(disk) and disk["name"] not in erased):
             what = "in use" if _in_use(disk) else ", ".join(_holds(disk))
             print(f"  {_describe(disk)}: left alone ({what})")
             continue
@@ -283,6 +308,33 @@ def _choose_data_disks(
         if _yes(f"Erase everything on {disk['name']}? [y/N] ", default=False):
             chosen.append(DataDisk(disk["name"], mount))
     return chosen
+
+
+def _erased() -> set[str]:
+    """The disks an earlier attempt from this live ISO erased for data."""
+    return set(ERASED.read_text().split()) if ERASED.exists() else set()
+
+
+def _close_leftovers(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Close the encrypted volumes an earlier attempt left open (the live
+    ISO opens none itself), so their disks can be erased again; lsblk's list
+    again if any was."""
+    opened = [
+        device["name"]
+        for disk in devices
+        for device in _descendants(disk)
+        if device["type"] == "crypt" and not _in_use(device)
+    ]
+    for name in opened:
+        run("cryptsetup", "close", name)
+    return _devices() if opened else devices
+
+
+def _descendants(device: dict[str, Any]) -> list[dict[str, Any]]:
+    found = []
+    for child in device.get("children", []):
+        found += [child, *_descendants(child)]
+    return found
 
 
 def _holds(device: dict[str, Any]) -> list[str]:
@@ -359,6 +411,8 @@ def _encrypt(partition: str, name: str, passphrase: str) -> str:
 def _make_data_disk(volume: DataDisk, passphrase: str) -> tuple[str, str]:
     """Erase a data disk: one partition, LUKS2 opened by a key file of its
     own or the passphrase, and Btrfs. Returns the LUKS and Btrfs UUIDs."""
+    with ERASED.open("a") as erased:
+        erased.write(f"{volume.disk}\n")
     wipe = ["--wipe", "always", "--wipe-partitions", "always"]
     run("sfdisk", *wipe, volume.disk, data=f"label: gpt\ntype={DATA_TYPE}\n")
     run("udevadm", "settle")
@@ -489,6 +543,36 @@ def _configure(user: str, passwords: dict[str, str], locale: str) -> None:
     sudoers.write_text("%wheel ALL=(ALL:ALL) ALL\n")
     sudoers.chmod(0o440)
     _chroot("systemctl", "enable", "NetworkManager", "systemd-timesyncd")
+
+
+def _carry_wifi() -> None:
+    """A NetworkManager connection for each WPA network the live ISO saved
+    with iwctl, so the new system joins it after the reboot. Only a network
+    with a plain name and a passphrase: others are joined again with nmtui."""
+    if not IWD.is_dir():
+        return
+    folder = MNT / NM_CONNECTIONS
+    for saved in sorted(IWD.glob("*.psk")):
+        name = saved.stem
+        found = re.search(r"^Passphrase=(.+)$", saved.read_text(), re.M)
+        if not IWD_PLAIN_NAME.fullmatch(name) or not found:
+            continue
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        # A key file's string: a backslash escaped, a leading space kept.
+        psk = found.group(1).replace("\\", "\\\\")
+        psk = "\\s" + psk[1:] if psk.startswith(" ") else psk
+        text = (
+            f"[connection]\nid={name}\ntype=wifi\n\n"
+            f"[wifi]\nmode=infrastructure\nssid={name}\n\n"
+            f"[wifi-security]\nkey-mgmt=wpa-psk\npsk={psk}\n\n"
+            "[ipv4]\nmethod=auto\n\n[ipv6]\nmethod=auto\n"
+        )
+        path = folder / f"{name}.nmconnection"
+        # Created 0600, root's, as NetworkManager insists, then filled.
+        with os.fdopen(
+            os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w"
+        ) as file:
+            file.write(text)
 
 
 def _command_line() -> str:

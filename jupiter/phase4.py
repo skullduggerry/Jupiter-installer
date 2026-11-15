@@ -33,9 +33,11 @@ SUDO_PAM = Path("/etc/pam.d/sudo")
 POLKIT_PAM = Path("/etc/pam.d/polkit-1")
 POLKIT_VENDOR_PAM = Path("/usr/lib/pam.d/polkit-1")
 # First in sudo's and polkit's stacks: a finger is enough, and after three
-# failed matches, a timeout or with no print enrolled, the password is asked
-# for as before.
-FINGERPRINT = "auth       sufficient   pam_fprintd.so\n"
+# failed matches, 10 s without a finger or with no print enrolled, the
+# password is asked for as before: the greetd stack's limits.
+FINGERPRINT = "auth       sufficient   pam_fprintd.so max-tries=3 timeout=10\n"
+# The line before it had limits, which an older run put in: replaced.
+OLD_FINGERPRINT = "auth       sufficient   pam_fprintd.so\n"
 
 
 def main() -> None:
@@ -174,11 +176,14 @@ def _take_a_finger(stack: Path, vendor: Path | None) -> None:
     if source is None or not source.exists():
         return
     text = source.read_text()
-    if "pam_fprintd" in text:
-        return
     lines = text.splitlines(keepends=True)
-    header = 1 if lines and lines[0].startswith("#%PAM") else 0
-    lines.insert(header, FINGERPRINT)
+    if OLD_FINGERPRINT in lines:
+        lines[lines.index(OLD_FINGERPRINT)] = FINGERPRINT
+    elif "pam_fprintd" in text:
+        return
+    else:
+        header = 1 if lines and lines[0].startswith("#%PAM") else 0
+        lines.insert(header, FINGERPRINT)
     with tempfile.NamedTemporaryFile("w", suffix=".pam") as new:
         new.write("".join(lines))
         new.flush()

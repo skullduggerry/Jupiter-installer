@@ -183,7 +183,8 @@ def _fixate(name: str, device: str) -> bool:
     image was built again)."""
     uuid = output("sudo", "cryptsetup", "luksUUID", device).strip()
     # Root's alone (0600, as systemd's package ships it): read through sudo.
-    lines = output("sudo", "cat", CRYPTTAB).splitlines(keepends=True)
+    old = output("sudo", "cat", CRYPTTAB)
+    lines = old.splitlines(keepends=True)
     for index, line in enumerate(lines):
         fields = line.split()
         if not fields or fields[0] != name:
@@ -209,7 +210,13 @@ def _fixate(name: str, device: str) -> bool:
     else:
         return False
     _install(CRYPTTAB, "".join(lines))
-    run("sudo", "mkinitcpio", "--allpresets")
+    try:
+        run("sudo", "mkinitcpio", "--allpresets")
+    except subprocess.CalledProcessError:
+        # The image would not have the new line: the old one back, so a
+        # rerun sees it missing and builds the image again.
+        _install(CRYPTTAB, old)
+        raise
     if not key:
         log(
             "Reboot and run bootstrap.sh 4 again: the volume key's hash is "

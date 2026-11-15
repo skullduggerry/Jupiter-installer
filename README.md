@@ -8,13 +8,13 @@ Part of Jupiter: [Jupiter-dotfiles](https://codeberg.org/skullduggery/Jupiter-do
 
 For the TPM to unlock the disk at boot, Secure Boot needs keys of the system's own: before booting the ISO, erase the Secure Boot keys in the firmware's setup (Setup Mode), and phase 1 enrols the new ones, Microsoft's beside them. Phase 1 says so if the firmware is not in Setup Mode; you can go on, and phase 4 tells you what is left. Without a TPM or Secure Boot, the disk asks for its passphrase at boot.
 
-Boot the [Arch ISO](https://archlinux.org/download/) in UEFI mode and connect to the internet (`iwctl` for Wi-Fi). If your keyboard is not US, load its layout with `loadkeys` first, so your passwords are typed as you will type them later. Then, as root:
+Boot the [Arch ISO](https://archlinux.org/download/) in UEFI mode and connect to the internet (`iwctl` for Wi-Fi). Then, as root:
 
 ```bash
 curl -fsSL https://codeberg.org/skullduggery/Jupiter-installer/raw/branch/main/bootstrap.sh | bash
 ```
 
-This runs phases 1 and 2. Reboot: the disk asks for its passphrase (until phase 4 binds it to the TPM), and a text console asks you to log in, since the login screen comes with phase 4. Log in as the user phase 1 created and run the copy it left in your home, which updates itself and runs phases 3 and 4:
+This runs phases 1 and 2. It asks for your keyboard's layout first and loads it, so your passwords are typed as you will type them at boot. Where more than one disk could take the system it shows what each holds and has no default: type the one to erase. Reboot: the disk asks for its passphrase (until phase 4 binds it to the TPM), and a text console asks you to log in, since the login screen comes with phase 4. Log in as the user phase 1 created and run the copy it left in your home, which updates itself and runs phases 3 and 4. They need the network: the Wi-Fi the live ISO joined is joined again, and if there is none they stop and say to connect with `nmtui`:
 
 ```bash
 ~/Jupiter-installer/bootstrap.sh
