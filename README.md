@@ -31,11 +31,11 @@ Already on Arch? Clone this repo and run `bootstrap.sh 2 3 4` as your user. Any 
 | **3** | Your own packages: `packages/pacman.txt` (with [multilib] enabled where one needs it, such as steam), and `packages/aur.txt` through paru. Where ufw is installed it gets KDE Connect's rules; turning it on is yours: `sudo ufw enable` |
 | **4** | The dotfiles: cloned and linked into place, with the login screen, an unencrypted login keyring on an encrypted disk, a fingerprint where there is a reader (login screen, sudo, polkit) and zsh; last, the TPM bound to unlock the disk, or what is still missing for it. Safe to run again |
 
-A package that fails to install is skipped, and named again at the end. What each phase does in detail: [Installing](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki/Installing).
+A package that fails to install is skipped, and named again at the end. What each phase does in detail: [Installing](https://github.com/skullduggerry/Jupiter-dotfiles/wiki/Installing).
 
 ## Customising
 
-Both this installer and the dotfiles are meant to be forked: add your packages to `packages/pacman.txt` and `aur.txt`, and point `bootstrap.sh` and `jupiter/config.py` at your forks (or set `INSTALLER_REPO`, `DOTFILES_REPO`, `DOTFILES_PUSH_URL` and `TESTING_REPO`). Leave the rest of `jupiter/` as it is, and upstream's updates merge cleanly. More in [Customising](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki/Customising).
+Both this installer and the dotfiles are meant to be forked: add your packages to `packages/pacman.txt` and `aur.txt`, and point `bootstrap.sh` and `jupiter/config.py` at your forks (or set `INSTALLER_REPO`, `DOTFILES_REPO`, `DOTFILES_PUSH_URL` and `TESTING_REPO`). Leave the rest of `jupiter/` as it is, and upstream's updates merge cleanly. More in [Customising](https://github.com/skullduggerry/Jupiter-dotfiles/wiki/Customising).
 
 ## Development
 
@@ -50,8 +50,8 @@ Each Jupiter repo has this `check.sh`, with the same arguments, and `bootstrap.s
 
 ## Documentation
 
-- [The wiki](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki), shared by the three repos: installing, customising, development.
-- Every step of each phase, in the order it happens: [phase 1](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki/Phase-1-Base-system), [phase 2](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki/Phase-2-Desktop), [phase 3](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki/Phase-3-Packages), [phase 4](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki/Phase-4-Dotfiles).
-- [Installer troubleshooting](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki/Installer-troubleshooting): every message the installer prints, what it means and what to do.
-- [Disk encryption](https://codeberg.org/skullduggery/Jupiter-dotfiles/wiki/Disk-encryption): how the encrypted disk, Secure Boot, the TPM and the fingerprint fit together, and a checklist for real hardware with the way back from each step.
+- [The wiki](https://github.com/skullduggerry/Jupiter-dotfiles/wiki), shared by the three repos: installing, customising, development.
+- Every step of each phase, in the order it happens: [phase 1](https://github.com/skullduggerry/Jupiter-dotfiles/wiki/Phase-1-Base-system), [phase 2](https://github.com/skullduggerry/Jupiter-dotfiles/wiki/Phase-2-Desktop), [phase 3](https://github.com/skullduggerry/Jupiter-dotfiles/wiki/Phase-3-Packages), [phase 4](https://github.com/skullduggerry/Jupiter-dotfiles/wiki/Phase-4-Dotfiles).
+- [Installer troubleshooting](https://github.com/skullduggerry/Jupiter-dotfiles/wiki/Installer-troubleshooting): every message the installer prints, what it means and what to do.
+- [Disk encryption](https://github.com/skullduggerry/Jupiter-dotfiles/wiki/Disk-encryption): how the encrypted disk, Secure Boot, the TPM and the fingerprint fit together, and a checklist for real hardware with the way back from each step.
 - [Encrypting an existing install](docs/encrypt-an-existing-install.md): a system phase 1 installed before it encrypted, encrypted in place from the live ISO.
