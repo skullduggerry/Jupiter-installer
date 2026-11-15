@@ -575,11 +575,20 @@ def _carry_wifi() -> None:
             file.write(text)
 
 
-def _command_line() -> str:
-    uuid = output("findmnt", "--noheadings", "-o", "UUID", MNT).strip()
+def _command_line(encrypt: bool) -> str:
+    """The kernel's command line. Encrypted, the root is named by its opened
+    volume, which only systemd-cryptsetup makes, from crypttab's line: its
+    key measured into PCR 15, and the one fixed there (tpm.py). By its file
+    system's UUID, a disk without encryption carrying that UUID would be
+    mounted in the root's place with no volume opened, PCR 15 still zero,
+    and the TPM would give that system the key."""
+    if encrypt:
+        root = f"/dev/mapper/{ROOT_VOLUME}"
+    else:
+        uuid = output("findmnt", "--noheadings", "-o", "UUID", MNT).strip()
+        root = f"UUID={uuid}"
     return (
-        f"root=UUID={uuid} rootflags=subvol=@ rw zswap.enabled=0"
-        " quiet loglevel=3"
+        f"root={root} rootflags=subvol=@ rw zswap.enabled=0 quiet loglevel=3"
     )
 
 
@@ -588,7 +597,7 @@ def _write_kernel_image_settings() -> None:
     builds; before pacstrap, which builds the first (or mkinitcpio would
     take the live ISO's command line)."""
     (MNT / "etc/kernel").mkdir()
-    (MNT / "etc/kernel/cmdline").write_text(f"{_command_line()}\n")
+    (MNT / "etc/kernel/cmdline").write_text(f"{_command_line(True)}\n")
     (MNT / "etc/mkinitcpio.d").mkdir()
     (MNT / "etc/mkinitcpio.d/linux.preset").write_text(secureboot.PRESET)
 
@@ -618,7 +627,7 @@ def _install_boot_loader(entry: bool = True) -> None:
             "title   Arch Linux\n"
             "linux   /vmlinuz-linux\n"
             "initrd  /initramfs-linux.img\n"
-            f"options {_command_line()}\n"
+            f"options {_command_line(False)}\n"
         )
     # No menu to wait at: holding Space at power-on still brings it up.
     loader = MNT / "boot/loader/loader.conf"

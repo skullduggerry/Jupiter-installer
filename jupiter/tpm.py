@@ -8,7 +8,10 @@ systemd-cryptsetup extends with the volume key as soon as it opens a volume
 any volume is open, in this initramfs, so a volume an attacker put in place
 of this one, with its UUID, cannot lead to it. fixate-volume-key makes the
 initramfs refuse such a volume outright, so no passphrase is ever typed into
-the system on it. A recovery key is added once, and shown once.
+the system on it. The image's command line names the root by that opened
+volume (root=/dev/mapper/<name>), so nothing a volume was not opened for is
+ever mounted as the root: an install that named it by its file system's UUID
+is changed to. A recovery key is added once, and shown once.
 
 Run again (bootstrap.sh 4), it changes nothing while the binding still
 matches the TPM's PCR 7, and enrols again where a firmware or dbx update
@@ -19,6 +22,7 @@ enrolled), it says what, and the passphrase keeps unlocking the disk.
 import hashlib
 import json
 import os
+import re
 import struct
 import subprocess
 import tempfile
@@ -33,6 +37,9 @@ SYSTEMD_VENDOR = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
 # Set by systemd-stub: this boot came from a unified kernel image.
 STUB_INFO = secureboot.EFIVARS / f"StubInfo-{SYSTEMD_VENDOR}"
 CRYPTTAB = Path("/etc/crypttab")
+# The command line mkinitcpio builds into the unified kernel image.
+CMDLINE = Path("/etc/kernel/cmdline")
+ROOT_BY_UUID = re.compile(r"(?<!\S)root=UUID=\S+")
 MEASURE_LOG = Path("/run/log/systemd/tpm2-measure.log")
 ZERO = "0" * 64
 # Always given: systemd-cryptenroll 262 binds to no PCRs at all without it.
@@ -58,6 +65,7 @@ def main() -> None:
     if volume is None:
         return
     name, device = volume
+    named = _name_root(name)
     if not (TPM / "tpm_version_major").exists() or (
         (TPM / "tpm_version_major").read_text().strip() != "2"
     ):
@@ -74,7 +82,7 @@ def main() -> None:
     changed = _recovery(device) or changed
     if changed:
         _header_backup(device)
-    else:
+    elif not named:
         log("The TPM unlocks the disk; nothing to change")
 
 
@@ -93,6 +101,33 @@ def root_volume() -> tuple[str, str] | None:
         if fields[1:] == ["crypto_LUKS"]:
             return mapped.removeprefix("/dev/mapper/"), fields[0]
     return None
+
+
+def _name_root(name: str) -> bool:
+    """The image's command line names the root by its opened volume, as
+    phase 1 writes it (its _command_line says why); True if it named the
+    file system's UUID until now (and the image was built again). PCR 7
+    does not cover the command line: the TPM's slot stays as it is."""
+    try:
+        old = CMDLINE.read_text()
+    except OSError:  # no unified kernel image: not phase 1's encrypted boot
+        return False
+    new = ROOT_BY_UUID.sub(f"root=/dev/mapper/{name}", old)
+    if new == old:
+        return False
+    _install(CMDLINE, new, mode="0644")
+    try:
+        run("sudo", "mkinitcpio", "--allpresets")
+    except subprocess.CalledProcessError:
+        # The image would still name the UUID: the old line back, so a
+        # rerun sees it and builds the image again.
+        _install(CMDLINE, old, mode="0644")
+        raise
+    log(
+        f"The kernel image now names the root as /dev/mapper/{name}, not by "
+        "its file system's UUID, which a disk without encryption could carry"
+    )
+    return True
 
 
 def _missing() -> list[str]:
@@ -279,9 +314,9 @@ def _header_backup(device: str) -> None:
     log(f"Wrote {path}: copy it off this computer, then delete it here")
 
 
-def _install(path: Path, text: str) -> None:
+def _install(path: Path, text: str, mode: str = "0600") -> None:
     """Replace a root-owned file, keeping the old one as path~."""
     with tempfile.NamedTemporaryFile("w", suffix=path.suffix) as new:
         new.write(text)
         new.flush()
-        run("sudo", "install", "-b", "-m", "0600", new.name, path)
+        run("sudo", "install", "-b", "-m", mode, new.name, path)

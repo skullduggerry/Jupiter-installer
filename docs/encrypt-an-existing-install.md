@@ -75,7 +75,9 @@ mount "$ESP" /mnt/boot
 The root is opened in systemd's initramfs (crypttab's `x-initrd.attach`),
 its passphrase asked in your console keymap (`sd-vconsole`), and the kernel
 is started as one signed image with its command line in it, from the loader
-entry's:
+entry's, with the root named by its opened volume instead of its file
+system's UUID (a disk without encryption could carry that UUID, and be
+mounted in the root's place):
 
 ```bash
 cat >/mnt/etc/crypttab <<EOF
@@ -84,7 +86,8 @@ EOF
 echo 'HOOKS=(systemd keyboard autodetect microcode modconf sd-vconsole block sd-encrypt filesystems)' \
     >/mnt/etc/mkinitcpio.conf.d/jupiter.conf
 mkdir -p /mnt/etc/kernel
-sed -n 's/^options *//p' /mnt/boot/loader/entries/arch.conf >/mnt/etc/kernel/cmdline
+sed -n 's/^options *//p' /mnt/boot/loader/entries/arch.conf |
+    sed 's|root=UUID=[^ ]*|root=/dev/mapper/root|' >/mnt/etc/kernel/cmdline
 cat >/mnt/etc/mkinitcpio.d/linux.preset <<'EOF'
 ALL_kver="/boot/vmlinuz-linux"
 PRESETS=('default')
@@ -92,7 +95,8 @@ default_uki="/boot/EFI/Linux/arch-linux.efi"
 EOF
 ```
 
-Check that `/mnt/etc/kernel/cmdline` names `root=UUID=` and `rootflags=subvol=@`:
+Check that `/mnt/etc/kernel/cmdline` names `root=/dev/mapper/root` and
+`rootflags=subvol=@`:
 
 ```bash
 cat /mnt/etc/kernel/cmdline
