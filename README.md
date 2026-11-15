@@ -1,8 +1,8 @@
 # Jupiter-installer
 
-Installs Arch Linux with Hyprland, Quickshell and [Jupiter-dotfiles](https://codeberg.org/skullduggery/Jupiter-dotfiles), in four phases written in Python with nothing beyond its standard library.
+Installs Arch Linux with Hyprland, Quickshell and [Jupiter-dotfiles](https://github.com/skullduggerry/Jupiter-dotfiles), in four phases written in Python with nothing beyond its standard library.
 
-Part of Jupiter: [Jupiter-dotfiles](https://codeberg.org/skullduggery/Jupiter-dotfiles) is the desktop it sets up, and [Jupiter-testing](https://codeberg.org/skullduggery/Jupiter-testing) lints and tests both.
+Part of Jupiter: [Jupiter-dotfiles](https://github.com/skullduggerry/Jupiter-dotfiles) is the desktop it sets up, and [Jupiter-testing](https://github.com/skullduggerry/Jupiter-testing) lints and tests both.
 
 ## Installing
 
@@ -11,7 +11,7 @@ For the TPM to unlock the disk at boot, Secure Boot needs keys of the system's o
 Boot the [Arch ISO](https://archlinux.org/download/) in UEFI mode and connect to the internet (`iwctl` for Wi-Fi). Then, as root:
 
 ```bash
-curl -fsSL https://codeberg.org/skullduggery/Jupiter-installer/raw/branch/main/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/skullduggerry/Jupiter-installer/main/bootstrap.sh | bash
 ```
 
 This runs phases 1 and 2. It asks for your keyboard's layout first and loads it, so your passwords are typed as you will type them at boot. Where more than one disk could take the system it shows what each holds and has no default: type the one to erase. Reboot: the disk asks for its passphrase (until phase 4 binds it to the TPM), and a text console asks you to log in, since the login screen comes with phase 4. Log in as the user phase 1 created and run the copy it left in your home, which updates itself and runs phases 3 and 4. They need the network: the Wi-Fi the live ISO joined is joined again, and if there is none they stop and say to connect with `nmtui`:

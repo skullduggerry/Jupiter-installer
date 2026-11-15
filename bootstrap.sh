@@ -11,7 +11,7 @@ case ${1-} in
         ;;
 esac
 
-repo=${INSTALLER_REPO:-https://codeberg.org/skullduggery/Jupiter-installer.git}
+repo=${INSTALLER_REPO:-https://github.com/skullduggerry/Jupiter-installer.git}
 dir=$HOME/$(basename "$repo" .git)
 # Run from a clone, that clone is the installer, wherever it is and whatever
 # it is called; piped from curl, there is none yet.

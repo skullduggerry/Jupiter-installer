@@ -11,7 +11,7 @@ if [[ -d $testing && ! -x $testing/check.sh ]]; then
     echo "check.sh: $testing has no check.sh: update it (git -C $testing pull)" >&2
     exit 2
 elif [[ ! -d $testing ]]; then
-    repo=${TESTING_REPO:-https://codeberg.org/skullduggery/Jupiter-testing.git}
+    repo=${TESTING_REPO:-https://github.com/skullduggerry/Jupiter-testing.git}
     echo "==> Cloning Jupiter-testing into $testing, which runs the checks"
     git clone --quiet "$repo" "$testing" || {
         echo "check.sh: could not clone $repo: clone it yourself, or set JUPITER_TESTING" >&2

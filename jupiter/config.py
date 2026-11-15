@@ -7,8 +7,8 @@ HTTPS, which needs no keys, and pushes over SSH.
 import os
 
 DOTFILES_REPO = os.environ.get(
-    "DOTFILES_REPO", "https://codeberg.org/skullduggery/Jupiter-dotfiles.git"
+    "DOTFILES_REPO", "https://github.com/skullduggerry/Jupiter-dotfiles.git"
 )
 DOTFILES_PUSH_URL = os.environ.get(
-    "DOTFILES_PUSH_URL", "git@codeberg.org:skullduggery/Jupiter-dotfiles.git"
+    "DOTFILES_PUSH_URL", "git@github.com:skullduggerry/Jupiter-dotfiles.git"
 )
