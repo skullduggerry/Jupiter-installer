@@ -34,7 +34,7 @@ POLKIT_PAM = Path("/etc/pam.d/polkit-1")
 POLKIT_VENDOR_PAM = Path("/usr/lib/pam.d/polkit-1")
 # First in sudo's and polkit's stacks: a finger is enough, and after three
 # failed matches, 10 s without a finger or with no print enrolled, the
-# password is asked for as before: the greetd stack's limits.
+# password is asked for as before.
 FINGERPRINT = "auth       sufficient   pam_fprintd.so max-tries=3 timeout=10\n"
 # The line before it had limits, which an older run put in: replaced.
 OLD_FINGERPRINT = "auth       sufficient   pam_fprintd.so\n"
@@ -143,8 +143,8 @@ def _fingerprint() -> None:
     polkit's prompts take it.
 
     The dotfiles' lock screen listens for a finger by itself, and their login
-    screen takes one for Enter on an empty field; the login keyring, kept
-    unencrypted (keyring.py), opens either way.
+    screen asks for one as it opens and for Enter on an empty field; the
+    login keyring, kept unencrypted (keyring.py), opens either way.
     """
     if shutil.which("fprintd-list") is None:
         return

@@ -3,9 +3,10 @@
 AUR packages are installed with paru, which is built first if missing,
 once you have read its PKGBUILD. paru then shows each package's PKGBUILD
 for review before building it. A package only [multilib] has (steam) gets
-[multilib] enabled in /etc/pacman.conf first. Where ufw is installed, KDE
-Connect's ports are opened to the local networks; turning ufw on is yours
-(`sudo ufw enable`).
+[multilib] enabled in /etc/pacman.conf first. pacman, and paru through it,
+get colour, the progress bar's Pac-Man and a table of what changes. Where ufw
+is installed, KDE Connect's ports are opened to the local networks; turning
+ufw on is yours (`sudo ufw enable`).
 """
 
 import re
@@ -39,6 +40,9 @@ LIB32 = {
 MULTILIB_OFF = re.compile(
     r"^#\[multilib\]\n#(Include = /etc/pacman\.d/mirrorlist)$", re.MULTILINE
 )
+# How pacman and paru look: Arch's pacman.conf ships Color and VerbosePkgLists
+# commented out in [options], and lacks ILoveCandy.
+LOOK = ["Color", "ILoveCandy", "VerbosePkgLists"]
 # The private ranges, IPv6's link-local among them: the phone finds the
 # computer by broadcast and the two connect directly, so KDE Connect works on
 # any local network and is never reachable from the internet.
@@ -49,6 +53,7 @@ def main() -> None:
     """Install the official packages, then the AUR ones through paru."""
     aur = packages("aur.txt")
     build_tools = ["base-devel", "git"] if aur else []
+    _look()
     run("sudo", "pacman", "-Syu", "--noconfirm")
     _multilib(packages("pacman.txt"))
     lib32 = _lib32_drivers(packages("pacman.txt"))
@@ -70,15 +75,56 @@ def _multilib(names: list[str]) -> None:
     text = PACMAN_CONF.read_text()
     if not unknown or not MULTILIB_OFF.search(text):
         return
-    enabled = MULTILIB_OFF.sub(r"[multilib]\n\1", text)
-    with tempfile.NamedTemporaryFile("w", suffix=".conf") as new:
-        new.write(enabled)
-        new.flush()
-        # -b keeps the old one as pacman.conf~.
-        run("sudo", "install", "-b", "-m", "0644", new.name, PACMAN_CONF)
+    _write_pacman_conf(MULTILIB_OFF.sub(r"[multilib]\n\1", text))
     # All repositories at once: a bare -Sy would make a partial upgrade.
     run("sudo", "pacman", "-Syu", "--noconfirm")
     log(f"Enabled [multilib] in {PACMAN_CONF}, for {' '.join(unknown)}")
+
+
+def _look() -> None:
+    """Turn on LOOK in pacman.conf, for pacman and paru alike."""
+    text = PACMAN_CONF.read_text()
+    looked = _with_look(text)
+    if looked != text:
+        _write_pacman_conf(looked)
+        log(f"Turned on {', '.join(LOOK)} in {PACMAN_CONF}")
+
+
+def _with_look(text: str) -> str:
+    """pacman.conf with each of LOOK on: uncommented where Arch has it
+    commented out, else added under the option before it in LOOK (the
+    first under [options]). An option that is on already stays as it is."""
+    lines = text.splitlines(keepends=True)
+    if "[options]\n" not in lines:
+        return text
+    top = lines.index("[options]\n") + 1
+    end = next(
+        (i for i in range(top, len(lines)) if lines[i].startswith("[")),
+        len(lines),
+    )
+    after = top
+    for option in LOOK:
+        on, off = f"{option}\n", f"#{option}\n"
+        options = lines[top:end]
+        if on in options:
+            index = top + options.index(on)
+        elif off in options:
+            index = top + options.index(off)
+            lines[index] = on
+        else:
+            index = after
+            lines.insert(index, on)
+            end += 1
+        after = index + 1
+    return "".join(lines)
+
+
+def _write_pacman_conf(text: str) -> None:
+    with tempfile.NamedTemporaryFile("w", suffix=".conf") as new:
+        new.write(text)
+        new.flush()
+        # -b keeps the old one as pacman.conf~.
+        run("sudo", "install", "-b", "-m", "0644", new.name, PACMAN_CONF)
 
 
 def _lib32_drivers(names: list[str]) -> list[str]:
