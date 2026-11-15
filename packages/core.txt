@@ -45,6 +45,8 @@ wf-recorder
 zenity
 python
 python-dateutil
+# Phase 4's keyring step talks to gnome-keyring over D-Bus with it.
+python-gobject
 lua
 fprintd
 libfprint

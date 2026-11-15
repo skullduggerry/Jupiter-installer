@@ -26,12 +26,13 @@ ufw
 
 # What the checks (./check.sh in each Jupiter repo) run: ruff formats and
 # lints the Python, mypy checks its types (with the stubs of the libraries the
-# helpers use), python-coverage measures the tests, shellcheck and shfmt do the
+# helpers and the installer's keyring step use), python-coverage measures the tests, shellcheck and shfmt do the
 # shell, and stylua and lua-language-server do Hyprland's and neovim's Lua.
 # Drop them if you do not work on the repos.
 ruff
 mypy
 python-types-python-dateutil
+python-pygobject-stubs
 python-coverage
 shellcheck
 shfmt

@@ -1,5 +1,6 @@
 # The settings of the tools Jupiter-testing's checks run, which editors read
-# too. The installer itself needs nothing beyond Python's standard library.
+# too. The installer itself needs nothing beyond Python's standard library,
+# but for phase 4's keyring step: python-gobject, which phase 2 installs.
 
 [tool.ruff]
 line-length = 79

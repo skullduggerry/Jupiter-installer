@@ -2,9 +2,11 @@
 
 A finger at the login screen gives gnome-keyring no password to unlock the
 login keyring with, so on an encrypted system (its root on LUKS) it is kept
-unencrypted, and opens however you logged in. Where there is none yet, an
-empty one is made. An unencrypted system keeps its keyring as it is, and
-gets none made: its secrets would lie on the disk in the clear.
+unencrypted, and opens however you logged in; the dotfiles' login screen
+gives gnome-keyring no typed password there either, which it would encrypt
+the keyring with again. Where there is none yet, an empty one is made. An
+unencrypted system keeps its keyring as it is, and gets none made: its
+secrets would lie on the disk in the clear.
 
 Where an encrypted one exists, its secrets (an app's sign-in, Nextcloud's
 app password) are kept: asked first, gnome-keyring's own dialog changes its
@@ -15,12 +17,11 @@ through the installer, and a keyring is never written over or deleted.
 
 import os
 import shutil
-import subprocess
 import time
 from pathlib import Path
 
 from . import tpm
-from .common import log, output, run, warn
+from .common import log, warn
 
 PLAIN = """\
 [keyring]
@@ -99,30 +100,39 @@ def main() -> None:
 
 def _change_password() -> None:
     """gnome-keyring's dialog for the login keyring's password, waited for
-    until it is answered or dismissed."""
-    gdbus = ["gdbus", "call", "--session", "--dest", SECRETS]
-    reply = output(
-        *gdbus, "--object-path", SERVICE,
-        "--method", f"{INTERNAL}.ChangeWithPrompt", LOGIN,
+    until it is answered or dismissed, or gnome-keyring is gone.
+
+    One D-Bus connection asks for the prompt and shows it: gnome-keyring
+    lets no other use a prompt, and gnome-keyring 51 crashes when one does
+    (two gdbus calls). Imported here, as phase 1 runs where there is no
+    python-gobject (the live ISO); phase 2 installs it.
+    """
+    from gi.repository import Gio, GLib
+
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+    reply = bus.call_sync(
+        SECRETS, SERVICE, INTERNAL, "ChangeWithPrompt",
+        GLib.Variant("(o)", (LOGIN,)), GLib.VariantType("(o)"),
+        Gio.DBusCallFlags.NONE, -1,
     )  # fmt: skip
-    prompt = reply.split("'")[1]  # (objectpath '/org/.../prompt/p1',)
-    monitor = ["gdbus", "monitor", "--session", "--dest", SECRETS]
-    with subprocess.Popen(
-        [*monitor, "--object-path", prompt],
-        stdout=subprocess.PIPE,
-        text=True,
-    ) as watching:
-        assert watching.stdout
-        try:
-            run(
-                *gdbus, "--object-path", prompt,
-                "--method", f"{PROMPT}.Prompt", "",
-            )  # fmt: skip
-            for line in watching.stdout:
-                if f"{PROMPT}.Completed" in line:
-                    break
-        finally:
-            watching.terminate()
+    prompt: str = reply.unpack()[0]
+    loop = GLib.MainLoop()
+
+    def done(*_: object) -> None:
+        loop.quit()
+
+    bus.signal_subscribe(
+        SECRETS, PROMPT, "Completed", prompt, None,
+        Gio.DBusSignalFlags.NONE, done,
+    )  # fmt: skip
+    Gio.bus_watch_name_on_connection(
+        bus, SECRETS, Gio.BusNameWatcherFlags.NONE, None, done
+    )
+    bus.call_sync(
+        SECRETS, prompt, PROMPT, "Prompt", GLib.Variant("(s)", ("",)),
+        None, Gio.DBusCallFlags.NONE, -1,
+    )  # fmt: skip
+    loop.run()
 
 
 def _create(keyrings: Path) -> None:
