@@ -131,7 +131,9 @@ let
 
   # Paths the dotfiles name as Arch lays them out, linked to where NixOS
   # keeps them: the login screen's session list, the keyboard page's layouts,
-  # the GTK theme the colours import, Kvantum's theme and the zsh plugins.
+  # the GTK theme the colours import, and for working on the repos Kvantum's
+  # theme (kvantum-template.py) and Hyprland's Lua stubs (.luarc.json). The
+  # zsh plugins .zshrc finds on XDG_DATA_DIRS itself.
   sessions = config.services.displayManager.sessionData.desktops;
   usrShare = {
     "wayland-sessions" = "${sessions}/share/wayland-sessions";
@@ -140,12 +142,6 @@ let
     "themes" = "/run/current-system/sw/share/themes";
     "Kvantum" = "${pkgs.kdePackages.qtstyleplugin-kvantum}/share/Kvantum";
     "hypr" = "${hyprland}/share/hypr";
-    "zsh/plugins/zsh-autosuggestions" =
-      "${pkgs.zsh-autosuggestions}/share/zsh/plugins/zsh-autosuggestions";
-    "zsh/plugins/zsh-history-substring-search" =
-      "${pkgs.zsh-history-substring-search}/share/zsh/plugins/zsh-history-substring-search";
-    "zsh/plugins/zsh-syntax-highlighting" =
-      "${pkgs.zsh-syntax-highlighting}/share/zsh-syntax-highlighting";
   };
 in
 {
@@ -225,7 +221,19 @@ in
       "max-tries=3"
       "timeout=10"
     ];
+    # The lock screen's reader: the dotfiles' pam/fingerprint.conf, which
+    # names pam_fprintd as Arch finds it, with its store path. Their
+    # LockService runs this one where it exists.
+    jupiter-fingerprint.text =
+      builtins.replaceStrings
+        [ "pam_fprintd.so" ]
+        [ "${config.services.fprintd.package}/lib/security/pam_fprintd.so" ]
+        (builtins.readFile "${dotfiles}/.config/quickshell/pam/fingerprint.conf");
   };
+
+  # .zshrc's plugins, from the profile on XDG_DATA_DIRS: zsh's own folder is
+  # linked there already, zsh-syntax-highlighting's is not.
+  environment.pathsToLink = [ "/share/zsh-syntax-highlighting" ];
 
   # A drawing tablet's pad, readable by the user at the seat.
   services.udev.packages = [

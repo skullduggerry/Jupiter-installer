@@ -67,9 +67,11 @@ world-readable store. Phase 1 sets them with `chpasswd` on stdin inside
 
 ## What NixOS made different, and how it is handled
 
-The dotfiles are written for Arch's file system. Rather than changing them
-(they are the live desktop on Arch), `nixos/login.nix` adapts what it takes
-from them, and the dotfiles change only where they must:
+The dotfiles were written for Arch's file system. They now serve both
+systems: where they can find a file by the system's own means they do
+(`.zshrc`'s plugins on `XDG_DATA_DIRS`, the lock screen's reader in a stack
+the system declares), and where a path is fixed in QML or CSS,
+`nixos/login.nix` links it. Each change, on either side:
 
 - **PAM modules by path.** NixOS's Linux-PAM finds only its own modules by
   name. The dotfiles' `etc/pam.d/greetd` and `greetd-greeter` are read from
@@ -103,11 +105,22 @@ from them, and the dotfiles change only where they must:
   has no NixOS profile. The dotfiles' `install-greeter.sh` leaves a PAM
   stack that is a link alone (NixOS's are), so it never writes Arch's
   stacks over NixOS's.
-- **Arch paths the dotfiles read.** Linked under `/usr/share` by tmpfiles:
-  `wayland-sessions` and `xsessions` (the login screen's session list,
-  where NixOS keeps uwsm's Hyprland session), `X11/xkb` (the keyboard
-  page), `themes` (adw-gtk3, which the GTK colours import), `Kvantum`,
-  `hypr`, and the three zsh plugins `.zshrc` sources.
+- **The lock screen's finger.** The dotfiles' `pam/fingerprint.conf` names
+  `pam_fprintd.so`, which NixOS's PAM cannot find by name. `login.nix`
+  declares the same stack with the store path as
+  `/etc/pam.d/jupiter-fingerprint`, and the dotfiles' `LockService` runs
+  that one where it exists (only root writes `/etc/pam.d`), and their own
+  everywhere else.
+- **zsh's plugins.** `.zshrc` sources each from the first folder of
+  `XDG_DATA_DIRS` (then `/usr/share`) that has it, as `zsh/plugins/<name>/`
+  (Arch's layout) or `<name>/`; NixOS's profile, on `XDG_DATA_DIRS`, has
+  them once `login.nix` links zsh-syntax-highlighting's folder into it.
+- **Arch paths fixed in the dotfiles.** Linked under `/usr/share` by
+  tmpfiles: `wayland-sessions` and `xsessions` (the login screen's session
+  list, where NixOS keeps uwsm's Hyprland session), `X11/xkb` (the keyboard
+  page's `FileView`), `themes` (adw-gtk3, which the GTK colours' CSS
+  imports by URL), and for working on the repos `Kvantum`
+  (`kvantum-template.py`'s default) and `hypr` (`.luarc.json`'s stubs).
 - **The XDG menu.** The dotfiles set `XDG_MENU_PREFIX=arch-` for
   archlinux-xdg-menu; `desktop.nix` writes an `arch-applications.menu` of
   every app.
@@ -161,6 +174,33 @@ from them, and the dotfiles change only where they must:
 | ufw | NixOS's firewall, see above |
 | qemu, swtpm, edk2-ovmf (the VM checks) | not yet listed: the VM rig is Arch's (below) |
 
+## Why nixos-unstable, not a stable release
+
+Checked against nixos-26.05, the stable release when this was written, with
+the dotfiles of the same branch:
+
+- **Hyprland 0.55.4 rejects the desktop's config**
+  (`Hyprland --verify-config`): `cursor.lua` listens for an event it does
+  not have (`input.keyboard.key`), `keybinds.lua`'s swipe-down gesture
+  gives `action` callbacks where it takes a string only, and `tablet.lua`
+  sets the tablet's `pressure_range_min/max`, which it does not know. The
+  session would start with those errors, without what follows them in
+  those files: the cursor's handling, the swipe down to the shell's
+  dropdown and the tablet's pressure range. The greeter's config passes. Unstable's 0.57.2 passes
+  both, as Arch's does: the dotfiles follow Hyprland as Arch ships it.
+- **Quickshell 0.3.0**, where the dotfiles are written against 0.3.2's
+  types: the dotfiles' QML suites (the shell's logic, the lock and login
+  screens) pass on both, flaking now and then on either alike, so no
+  difference showed; qmllint against 0.3.0's types was not run.
+- **The modules** use `services.fprintd.enablePam`, which 26.05 lacks.
+- uwsm 0.26 against 0.27, and the rest of the packages: nothing found.
+
+So stable as it is would cost the desktop part of its config. Two ways to
+it, if a stable base is wanted: stable with Hyprland and Quickshell from
+unstable (a second nixpkgs input and an overlay; the two then bring
+unstable's libraries along, a larger closure), or wait for the next
+release to carry them. Rolling, as Arch is, stays the simplest match.
+
 ## Status
 
 What works and how it was checked, as of this branch's first commit:
@@ -184,13 +224,11 @@ What works and how it was checked, as of this branch's first commit:
      log in at the greeter.
   3. Check on hardware that lanzaboote's stub sets `StubInfo`, which
      `tpm.py` reads to tell that a signed image started this boot.
-  4. The lock screen's finger: the dotfiles' `.config/quickshell/pam/
-     fingerprint.conf` names `pam_fprintd.so` without a path, which NixOS's
-     Linux-PAM cannot find; the finger fails there (the password still
-     works). Needs the dotfiles to take the module's path from the system
-     (e.g. a stack in `/etc/pam.d` where one exists).
-  5. Make the dotfiles find what `/usr/share` links stand in for through
-     `XDG_DATA_DIRS`, and drop the links.
+  4. Find the rest of what the `/usr/share` links stand in for without them:
+     the greeter's sessions, the keyboard page's layouts and the GTK
+     theme's import are fixed paths in Python, QML and CSS.
+  5. Merge the dotfiles' branch to their `main` before this repo's: until
+     then the lock screen's finger fails on NixOS (the password works).
   6. CI: the workflow's `nix` job evaluates `hosts/example`; the suites run
      in the Arch container, which has no Nix, so the evaluation tests are
      skipped there.
