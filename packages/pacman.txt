@@ -23,6 +23,12 @@ android-tools
 # A firewall; phase 3 opens KDE Connect's ports in it. Enabling it and its
 # other rules are yours: `sudo ufw enable`.
 ufw
+# Firmware updates, Secure Boot's revocation list (dbx) among them, which
+# keeps boot loaders Microsoft signed and later withdrew from starting here.
+# Running it is yours: `fwupdmgr refresh && fwupdmgr update`. After an update
+# that changes Secure Boot's state the disk asks for its passphrase once:
+# run bootstrap.sh 4 again.
+fwupd
 
 # What the checks (./check.sh in each Jupiter repo) run: ruff formats and
 # lints the Python, mypy checks its types (with the stubs of the libraries the

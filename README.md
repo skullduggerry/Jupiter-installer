@@ -8,6 +8,8 @@ Part of Jupiter: [Jupiter-dotfiles](https://github.com/skullduggerry/Jupiter-dot
 
 For the TPM to unlock the disk at boot, Secure Boot needs keys of the system's own: before booting the ISO, erase the Secure Boot keys in the firmware's setup (Setup Mode), and phase 1 enrols the new ones, Microsoft's beside them. Phase 1 says so if the firmware is not in Setup Mode; you can go on, and phase 4 tells you what is left. Without a TPM or Secure Boot, the disk asks for its passphrase at boot.
 
+The TPM gives the key to this system's signed kernel image and to nothing else, with no PIN: what then stands between someone holding the computer and its files is the login screen. Two things are yours to add. A password on the firmware's setup, without which anyone can turn Secure Boot off there and start a program that asks for your passphrase as the real prompt does; the real one only appears after a firmware update, and phase 4 then binds the disk again. And firmware updates (`fwupdmgr refresh && fwupdmgr update`, from phase 3's fwupd), which carry the list of boot loaders Microsoft has withdrawn its signature from.
+
 Boot the [Arch ISO](https://archlinux.org/download/) in UEFI mode and connect to the internet (`iwctl` for Wi-Fi). Then, as root:
 
 ```bash
