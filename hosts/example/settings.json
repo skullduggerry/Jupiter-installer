@@ -1,0 +1,30 @@
+{
+  "hostname": "example",
+  "user": "jupiter",
+  "timezone": "Europe/Berlin",
+  "country": "DE",
+  "locale": "en_US.UTF-8",
+  "keymap": "de-latin1",
+  "xkb": {
+    "layout": "de",
+    "model": "pc105",
+    "options": "terminate:ctrl_alt_bksp"
+  },
+  "esp": "4A3B-1C2D",
+  "root": {
+    "luks": "0a1b2c3d-1111-2222-3333-444455556666",
+    "filesystem": "5e6f7a8b-1111-2222-3333-444455556666"
+  },
+  "data": [
+    {
+      "name": "data",
+      "mount": "/data",
+      "luks": "9c8d7e6f-1111-2222-3333-444455556666",
+      "filesystem": "1f2e3d4c-1111-2222-3333-444455556666"
+    }
+  ],
+  "gpus": ["intel"],
+  "tpm": false,
+  "volumeKey": null,
+  "stateVersion": "26.11"
+}

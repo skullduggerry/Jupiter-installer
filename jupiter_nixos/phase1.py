@@ -1,22 +1,30 @@
-"""Phase 1: install the base system from the live ISO.
+"""Phase 1: install NixOS from the installation ISO.
 
-The steps are the Arch Linux Installation guide's, with archinstall's
-defaults: GPT with a 1 GiB EFI system partition at /boot, Btrfs subvolumes
-for everything else, swap on zram and systemd-boot.
+The disk is laid out as the Arch installer's phase 1 lays it out: GPT with
+a 1 GiB EFI system partition at /boot, and Btrfs subvolumes for everything
+else (@nix where Arch has pacman's cache), on LUKS2 unless you decline it: a
+passphrase opens it at boot, typed in the console keymap you chose. Other
+disks can be erased and encrypted as data disks, mounted where you say:
+each opens with a key file on the encrypted system (/etc/cryptsetup-keys.d),
+the passphrase being its fallback, and a missing one does not stop the boot.
+A disk you do not choose is never written to or opened.
 
-The system's Btrfs is on LUKS2 unless you decline it: a passphrase opens it
-at boot, typed in the console keymap you chose. Other disks can be erased
-and encrypted as data disks, mounted where you say: each opens with a key
-file on the encrypted system (/etc/cryptsetup-keys.d), the passphrase being
-its fallback, and a missing one does not stop the boot. A disk you do not
-choose is never written to or opened.
+What the Arch installer then does with pacstrap and arch-chroot, the
+flake declares (nixos/): this phase writes what it asked and found to
+hosts/<hostname>/settings.json, nixos-generate-config's hardware
+configuration beside it, both in the copy of this repo it leaves in your
+home, and runs nixos-install from that copy. Passwords are set afterwards
+with chpasswd, never in the configuration, which lands in the
+world-readable store. Encrypted, Secure Boot keys of the system's own are
+made first, for lanzaboote to sign with, and enrolled where the firmware
+lets them be. The Wi-Fi networks the ISO joined (NetworkManager's) are
+joined by the new system too.
 
 The keymap is asked first and loaded at once, so the passphrase and the
 passwords are typed in the layout they will be asked in at boot. A rerun
 after a failure closes what the failed attempt left open, and offers again
-the data disks it had begun to erase (as /run, which lasts until the live
-ISO is shut down, remembers). The Wi-Fi networks the live ISO joined (with
-iwctl) are joined by the new system too, through NetworkManager.
+the data disks it had begun to erase (as /run, which lasts until the ISO is
+shut down, remembers).
 """
 
 import getpass
@@ -33,19 +41,27 @@ from pathlib import Path
 from typing import Any
 
 from . import secureboot
-from .common import INSTALLER_DIR, LIVE, output, run, succeeds, warn
+from .common import (
+    INSTALLER_DIR,
+    OS_RELEASE,
+    live,
+    output,
+    run,
+    succeeds,
+    warn,
+    write_settings,
+)
 
 MNT = Path("/mnt")
 # The disks this live session erased, so a rerun after a failure can erase
 # them again: /run is the ISO's, gone once it shuts down.
 ERASED = Path("/run/jupiter-erased")
-# iwd's saved networks on the live ISO, and NetworkManager's on the system.
-IWD = Path("/var/lib/iwd")
+# NetworkManager's saved networks, on the ISO and on the system alike.
 NM_CONNECTIONS = Path("etc/NetworkManager/system-connections")
-# iwd's file name for a network whose name is only these (others: =hex).
-IWD_PLAIN_NAME = re.compile(r"[A-Za-z0-9 _-]+")
+ISO_CONNECTIONS = Path("/") / NM_CONNECTIONS
 EFI = Path("/sys/firmware/efi")
-LOCALE_GEN = Path("/etc/locale.gen")  # the live ISO's, listing every locale
+# tzdata's table of zones and their countries, as NixOS links it.
+ZONE_TAB = Path("/etc/zoneinfo/zone.tab")
 ROOT_TYPE = "4f68bce3-e8cd-4db1-96e7-fbcaf984b709"  # Linux x86-64 root (/)
 DATA_TYPE = "0fc63daf-8483-4772-8e79-3d69d8477de4"  # Linux filesystem data
 ROOT_VOLUME = "root"  # /dev/mapper/root, the encrypted system
@@ -54,68 +70,28 @@ SUBVOLUMES = {
     "@": "",
     "@home": "home",
     "@log": "var/log",
-    "@pkg": "var/cache/pacman/pkg",
+    "@nix": "nix",
 }
-BASE = [
-    "base",
-    "linux",
-    "mkinitcpio",
-    "linux-firmware",
-    "sof-firmware",
-    "btrfs-progs",
-    "zram-generator",
-    "networkmanager",
-    "sudo",
-    "git",
-    "python",
-]
-# Encrypted, sbctl for the Secure Boot keys and signatures, and the TPM's
-# library, which systemd-cryptsetup opens to unlock with it.
-ENCRYPTED_BASE = ["sbctl", "tpm2-tss"]
-MICROCODE = {"GenuineIntel": "intel-ucode", "AuthenticAMD": "amd-ucode"}
-GRAPHICS = {
-    "0x8086": ["mesa", "vulkan-intel", "intel-media-driver"],
-    "0x1002": ["mesa", "vulkan-radeon"],
-    "0x10de": ["mesa", "vulkan-nouveau"],
-}
-NVIDIA = ["nvidia-open", "libva-nvidia-driver"]
+# sbctl's keys, where lanzaboote's pkiBundle (nixos/secureboot.nix) finds
+# them; sbctl is not on the ISO, so it comes from nixpkgs for the one call.
+SBCTL = Path("var/lib/sbctl")
+NIX = ["nix", "--extra-experimental-features", "nix-command flakes"]
+GRAPHICS = {"0x8086": "intel", "0x1002": "amd", "0x10de": "nouveau"}
 NVIDIA_TURING = 0x1E00  # nvidia-open supports this device ID and newer
-NVIDIA_ENV = """\
-# From the Hyprland wiki's Nvidia page, for a machine whose only GPU is one.
-export LIBVA_DRIVER_NAME=nvidia
-export __GLX_VENDOR_LIBRARY_NAME=nvidia
-export NVD_BACKEND=direct
-"""
-KBD_MODEL_MAP = Path("/usr/share/systemd/kbd-model-map")
-XKB = ("XKBLAYOUT", "XKBMODEL", "XKBVARIANT", "XKBOPTIONS")
-# The initramfs only has to find the root file system. Without kms the
-# graphics driver loads beside the rest of the system instead of before it,
-# and Btrfs needs no fsck. Unencrypted, nothing is typed there, so the
-# console's keymap and font can wait for systemd-vconsole-setup too.
-HOOKS = "base udev autodetect microcode modconf keyboard block filesystems"
-# Encrypted, systemd's initramfs opens the root (sd-encrypt, from
-# /etc/crypttab's x-initrd.attach lines) and asks for the passphrase in the
-# console keymap (sd-vconsole). keyboard comes before autodetect, so every
-# keyboard driver is in, not only those of the keyboard plugged in now: the
-# passphrase may be typed on another. No busybox (base): no shell there, and
-# systemd's hook locks root in the initramfs (root:* in its /etc/shadow), so
-# its emergency shell refuses: a volume that will not open stops the boot.
-ENCRYPTED_HOOKS = (
-    "systemd keyboard autodetect microcode modconf sd-vconsole block "
-    "sd-encrypt filesystems"
-)
+XKB = ("layout", "model", "variant", "options")
+LOCALE = re.compile(r"[a-z]{2,3}_[A-Z]{2}(@[a-z]+)?\.UTF-8")
 MIN_DISK_GIB = 16  # smaller ones, like floppies, cannot take the system
 MIN_DATA_GIB = 1
 # Where a data disk may be mounted: a new folder, not one the system owns.
 MOUNT_POINT = re.compile(r"(/[a-z0-9][a-z0-9._-]*)+")
 SYSTEM_FOLDERS = {
-    "bin", "boot", "dev", "efi", "etc", "home", "lib", "lib64", "opt",
-    "proc", "root", "run", "sbin", "sys", "tmp", "usr", "var",
+    "bin", "boot", "dev", "efi", "etc", "home", "lib", "lib64", "nix",
+    "opt", "proc", "root", "run", "sbin", "srv", "sys", "tmp", "usr", "var",
 }  # fmt: skip
 HOSTNAME = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 USERNAME = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
-# The account greetd's package makes for the login screen in phase 2, which
-# keeps a user of that name instead: the login screen would run as them.
+# The account greetd's module makes for the login screen, which keeps a user
+# of that name instead: the login screen would run as them.
 RESERVED = {"greeter"}
 
 
@@ -133,11 +109,11 @@ class DataDisk:
 
 
 def main() -> None:
-    """Install Arch Linux on a disk of your choice and make it bootable."""
-    if not LIVE:
-        raise SystemExit("Phase 1 runs from the Arch Linux live ISO.")
+    """Install NixOS on a disk of your choice and make it bootable."""
+    if not live():
+        raise SystemExit("Phase 1 runs from the NixOS installation ISO.")
     if not EFI.is_dir():
-        raise SystemExit("Boot the live ISO in UEFI mode to install.")
+        raise SystemExit("Boot the ISO in UEFI mode to install.")
     if MNT.is_mount():
         run("umount", "--recursive", MNT)
 
@@ -156,63 +132,71 @@ def main() -> None:
     encrypt = _yes(f"Encrypt {disk}? [Y/n] ", default=True)
     passphrase = _new_password("the disk", "Passphrase") if encrypt else ""
     data = _choose_data_disks(devices, disk) if encrypt else []
-    hostname = _ask("Hostname", "archlinux", HOSTNAME.fullmatch)
+    hostname = _ask("Hostname", "nixos", HOSTNAME.fullmatch)
     user = _ask("Username", "", _is_new_user)
     passwords = {user: _new_password(user), "root": _new_password("root")}
     zones = _listed("timedatectl", "list-timezones")
     timezone = _ask("Time zone", "UTC", zones)
-    locale = _ask("Locale", "en_US.UTF-8", _is_locale)
+    locale = _ask("Locale", "en_US.UTF-8", LOCALE.fullmatch)
     if not _yes(f"Erase everything on {disk}? [y/N] ", default=False):
         raise SystemExit("Nothing was changed.")
 
     esp, root = _partition(disk)
-    crypttab = ""
-    if encrypt:
-        luks = _encrypt(root, ROOT_VOLUME, passphrase)
+    luks = _encrypt(root, ROOT_VOLUME, passphrase) if encrypt else None
+    if luks:
         root = f"/dev/mapper/{ROOT_VOLUME}"
-        # Its volume key measured into PCR 15 when it opens, which the TPM
-        # binding (phase 4) relies on.
-        options = "discard,x-initrd.attach,tpm2-measure-pcr=yes"
-        crypttab = f"{ROOT_VOLUME} UUID={luks} none {options}\n"
-    _mount(esp, root)
-    _write_settings(hostname, timezone, locale, keymap, encrypt)
-    if encrypt:
-        _write_kernel_image_settings()
-    mounts = ""
+    filesystem = _mount(esp, root)
+    volumes = []
     for volume in data:
-        luks, filesystem = _make_data_disk(volume, passphrase)
-        key = Path("/", KEYS, f"{volume.name}.key")
-        # A missing data disk is waited for 10 s, not systemd's 90, and never
-        # holds up the boot (nofail): data disks are internal, there or not.
-        wait = "nofail,x-systemd.device-timeout=10s"
-        crypttab += f"{volume.name} UUID={luks} {key} discard,{wait}\n"
-        options = f"compress=zstd,{wait}"
-        mounts += f"UUID={filesystem} {volume.mount} btrfs {options} 0 0\n"
-    graphics = drivers()
-    if "nvidia-open" in graphics and "mesa" not in graphics:  # NVIDIA only
-        env = MNT / "etc/xdg/uwsm/env-hyprland"  # uwsm reads it for Hyprland
-        env.parent.mkdir(parents=True)
-        env.write_text(NVIDIA_ENV)
-    extra = ENCRYPTED_BASE if encrypt else []
-    run("pacstrap", "-K", MNT, *BASE, *extra, *graphics)
-    with (MNT / "etc/fstab").open("a") as fstab:
-        fstab.write(output("genfstab", "-U", MNT) + mounts)
-    if encrypt:
-        # After pacstrap: systemd's package ships an empty one.
-        (MNT / "etc/crypttab").write_text(crypttab)
-    _configure(user, passwords, locale)
+        data_luks, data_filesystem = _make_data_disk(volume, passphrase)
+        volumes.append(
+            {
+                "name": volume.name,
+                "mount": volume.mount,
+                "luks": data_luks,
+                "filesystem": data_filesystem,
+            }
+        )
+    settings = {
+        "hostname": hostname,
+        "user": user,
+        "timezone": timezone,
+        "country": country(timezone, ZONE_TAB.read_text()),
+        "locale": locale,
+        "keymap": keymap,
+        "xkb": keyboard(keymap, _kbd_model_map().read_text()),
+        "esp": _uuid(esp),
+        "root": {"luks": luks, "filesystem": filesystem},
+        "data": volumes,
+        "gpus": gpus(),
+        "tpm": False,
+        "volumeKey": None,
+        "stateVersion": _release(),
+    }
+    copy = _copy_installer(user)
+    folder = copy / "hosts" / hostname
+    write_settings(folder, settings)
+    hardware = output(
+        "nixos-generate-config", "--root", MNT, "--no-filesystems",
+        "--show-hardware-config",
+    )  # fmt: skip
+    (folder / "hardware-configuration.nix").write_text(hardware)
+    # A flake in a git repo sees tracked files alone.
+    run("git", "-C", copy, "add", "--", f"hosts/{hostname}")
     _carry_wifi()
+    if encrypt:
+        _create_keys()
+    run(
+        "nixos-install", "--root", MNT, "--no-root-passwd",
+        "--no-channel-copy", "--flake", f"{copy}#{hostname}",
+    )  # fmt: skip
+    logins = [f"{name}:{password}" for name, password in passwords.items()]
+    _enter("chpasswd", data="\n".join(logins) + "\n")
+    _enter("chown", "--recursive", f"{user}:", f"/home/{user}")
     for volume in data:
         _own(volume, user)
     if encrypt:
-        _sign_boot(firmware)
-    _install_boot_loader(entry=not encrypt)
-    if encrypt:
-        # The image pacstrap built had no crypttab to open the root by, and
-        # no keys to be signed with.
-        _chroot("mkinitcpio", "--allpresets")
-        _chroot("systemctl", "enable", "systemd-boot-update.service")
-    _copy_installer(user)
+        _enroll_keys(firmware)
 
 
 def _ask(question: str, default: str, valid: Callable[[str], object]) -> str:
@@ -240,10 +224,6 @@ def _new_password(user: str, kind: str = "Password") -> str:
 def _is_new_user(name: str) -> bool:
     taken = {entry.pw_name for entry in pwd.getpwall()} | RESERVED
     return bool(USERNAME.fullmatch(name)) and name not in taken
-
-
-def _is_locale(name: str) -> bool:
-    return f"\n#{name} UTF-8" in LOCALE_GEN.read_text()
 
 
 def _listed(*command: str) -> Callable[[str], bool]:
@@ -463,12 +443,15 @@ def _own(volume: DataDisk, user: str) -> None:
         f"/dev/mapper/{volume.name}",
         MNT / volume.mount.lstrip("/"),
     )
-    _chroot("chown", f"{user}:", volume.mount)
+    _enter("chown", f"{user}:", volume.mount)
 
 
-def _mount(esp: str, root: str) -> None:
+def _mount(esp: str, root: str) -> str:
+    """Format the ESP and the root, make the subvolumes and mount them all
+    at /mnt; returns the Btrfs's UUID."""
+    filesystem = str(uuid.uuid4())
     run("mkfs.fat", "-F", "32", esp)
-    run("mkfs.btrfs", "--force", root)
+    run("mkfs.btrfs", "--force", f"--uuid={filesystem}", root)
     run("mount", root, MNT)
     run("btrfs", "subvolume", "create", *(MNT / name for name in SUBVOLUMES))
     run("umount", MNT)
@@ -476,35 +459,36 @@ def _mount(esp: str, root: str) -> None:
         options = f"compress=zstd,subvol={name}"
         run("mount", "--mkdir", "-o", options, root, MNT / path)
     run("mount", "--mkdir", "-o", "fmask=0077,dmask=0077", esp, MNT / "boot")
+    return filesystem
 
 
-def _write_settings(
-    hostname: str, timezone: str, locale: str, keymap: str, encrypt: bool
-) -> None:
-    """Write the settings no package owns.
+def _uuid(partition: str) -> str:
+    return output("blkid", "--match-tag", "UUID", "--output", "value",
+                  partition).strip()  # fmt: skip
 
-    They go in before pacstrap, so the initramfs it builds has these hooks.
-    """
-    etc = MNT / "etc"
-    (etc / "systemd").mkdir(parents=True)
-    (etc / "mkinitcpio.conf.d").mkdir()
-    hooks = ENCRYPTED_HOOKS if encrypt else HOOKS
-    (etc / "mkinitcpio.conf.d/jupiter.conf").write_text(f"HOOKS=({hooks})\n")
-    (etc / "hostname").write_text(f"{hostname}\n")
-    (etc / "locale.conf").write_text(f"LANG={locale}\n")
-    xkb = keyboard(keymap, KBD_MODEL_MAP.read_text())
-    lines = [f"{key}={value}\n" for key, value in xkb.items()]
-    (etc / "vconsole.conf").write_text("".join([f"KEYMAP={keymap}\n", *lines]))
-    (etc / "systemd/zram-generator.conf").write_text("[zram0]\n")
-    (etc / "localtime").symlink_to(f"/usr/share/zoneinfo/{timezone}")
+
+def country(timezone: str, table: str) -> str | None:
+    """The country of a time zone, from tzdata's zone.tab."""
+    for line in table.splitlines():
+        fields = line.split("	")
+        if len(fields) > 2 and fields[2] == timezone:
+            return fields[0]
+    return None
+
+
+def _kbd_model_map() -> Path:
+    """systemd's table of console keymaps and their X layouts, beside the
+    localectl that reads it."""
+    localectl = shutil.which("localectl")
+    if localectl is None:
+        raise SystemExit("localectl is missing: this is not the NixOS ISO.")
+    share = Path(localectl).resolve().parent.parent / "share"
+    return share / "systemd/kbd-model-map"
 
 
 def keyboard(keymap: str, table: str) -> dict[str, str]:
-    """The X layout for a console keymap, from systemd's kbd-model-map.
-
-    localectl set-keymap writes the same beside KEYMAP; the dotfiles'
-    desktop and login screen type in it.
-    """
+    """The X layout for a console keymap, from systemd's kbd-model-map, as
+    localectl set-keymap finds it; the desktop and login screen type in it."""
     for line in table.splitlines():
         fields = line.split()
         if fields[:1] == [keymap]:
@@ -513,137 +497,76 @@ def keyboard(keymap: str, table: str) -> dict[str, str]:
     return {}
 
 
-def drivers(root: Path = Path("/")) -> set[str]:
-    """Microcode for the CPU, and the graphics drivers of every GPU."""
-    cpu = (root / "proc/cpuinfo").read_text()
-    found = {package for vendor, package in MICROCODE.items() if vendor in cpu}
+def gpus(root: Path = Path("/")) -> list[str]:
+    """The driver for each GPU: nvidia for NVIDIA's from Turing on, which
+    nvidia-open supports, Mesa's (intel, amd, nouveau) for the rest."""
+    found = set()
     for device in (root / "sys/bus/pci/devices").iterdir():
         if not (device / "class").read_text().startswith("0x03"):
             continue
         vendor = (device / "vendor").read_text().strip()
         model = int((device / "device").read_text(), 16)
         if vendor == "0x10de" and model >= NVIDIA_TURING:
-            found.update(NVIDIA)
-        else:
-            found.update(GRAPHICS.get(vendor, []))
-    return found
+            found.add("nvidia")
+        elif vendor in GRAPHICS:
+            found.add(GRAPHICS[vendor])
+    return sorted(found)
 
 
-def _configure(user: str, passwords: dict[str, str], locale: str) -> None:
-    locale_gen = MNT / "etc/locale.gen"
-    entry = f"{locale} UTF-8"
-    text = locale_gen.read_text().replace(f"\n#{entry}", f"\n{entry}")
-    locale_gen.write_text(text)
-    _chroot("locale-gen")
-    _chroot("hwclock", "--systohc")
-    _chroot("useradd", "--create-home", "--groups", "wheel", user)
-    logins = [f"{name}:{password}" for name, password in passwords.items()]
-    _chroot("chpasswd", data="\n".join(logins) + "\n")
-    sudoers = MNT / "etc/sudoers.d/10-wheel"
-    sudoers.write_text("%wheel ALL=(ALL:ALL) ALL\n")
-    sudoers.chmod(0o440)
-    _chroot("systemctl", "enable", "NetworkManager", "systemd-timesyncd")
+def _release() -> str:
+    """The NixOS release of the ISO, which the system is installed with."""
+    text = OS_RELEASE.read_text()
+    found = re.search(r'^VERSION_ID="?([0-9.]+)', text, re.MULTILINE)
+    if not found:
+        raise SystemExit("The ISO's /etc/os-release names no NixOS release.")
+    return found.group(1)
 
 
 def _carry_wifi() -> None:
-    """A NetworkManager connection for each WPA network the live ISO saved
-    with iwctl, so the new system joins it after the reboot. Only a network
-    with a plain name and a passphrase: others are joined again with nmtui."""
-    if not IWD.is_dir():
+    """Copy NetworkManager's saved connections from the ISO (nmtui's), so
+    the new system joins the same networks after the reboot."""
+    if not ISO_CONNECTIONS.is_dir():
         return
     folder = MNT / NM_CONNECTIONS
-    for saved in sorted(IWD.glob("*.psk")):
-        name = saved.stem
-        found = re.search(r"^Passphrase=(.+)$", saved.read_text(), re.M)
-        if not IWD_PLAIN_NAME.fullmatch(name) or not found:
-            continue
+    for saved in sorted(ISO_CONNECTIONS.glob("*.nmconnection")):
         folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-        # A key file's string: a backslash escaped, a leading space kept.
-        psk = found.group(1).replace("\\", "\\\\")
-        psk = "\\s" + psk[1:] if psk.startswith(" ") else psk
-        text = (
-            f"[connection]\nid={name}\ntype=wifi\n\n"
-            f"[wifi]\nmode=infrastructure\nssid={name}\n\n"
-            f"[wifi-security]\nkey-mgmt=wpa-psk\npsk={psk}\n\n"
-            "[ipv4]\nmethod=auto\n\n[ipv6]\nmethod=auto\n"
-        )
-        path = folder / f"{name}.nmconnection"
+        path = folder / saved.name
         # Created 0600, root's, as NetworkManager insists, then filled.
         with os.fdopen(
-            os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w"
+            os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "wb"
         ) as file:
-            file.write(text)
+            file.write(saved.read_bytes())
 
 
-def _command_line(encrypt: bool) -> str:
-    """The kernel's command line. Encrypted, the root is named by its opened
-    volume, which only systemd-cryptsetup makes, from crypttab's line: its
-    key measured into PCR 15, and the one fixed there (tpm.py). By its file
-    system's UUID, a disk without encryption carrying that UUID would be
-    mounted in the root's place with no volume opened, PCR 15 still zero,
-    and the TPM would give that system the key."""
-    if encrypt:
-        root = f"/dev/mapper/{ROOT_VOLUME}"
-    else:
-        uuid = output("findmnt", "--noheadings", "-o", "UUID", MNT).strip()
-        root = f"UUID={uuid}"
-    return (
-        f"root={root} rootflags=subvol=@ rw zswap.enabled=0 quiet loglevel=3"
-    )
-
-
-def _write_kernel_image_settings() -> None:
-    """A unified kernel image, with its command line in it, is all mkinitcpio
-    builds; before pacstrap, which builds the first (or mkinitcpio would
-    take the live ISO's command line)."""
-    (MNT / "etc/kernel").mkdir()
-    (MNT / "etc/kernel/cmdline").write_text(f"{_command_line(True)}\n")
-    (MNT / "etc/mkinitcpio.d").mkdir()
-    (MNT / "etc/mkinitcpio.d/linux.preset").write_text(secureboot.PRESET)
-
-
-def _sign_boot(firmware: str) -> None:
-    """Secure Boot keys of the new system's own, enrolled if the firmware
-    lets them be, and systemd-boot signed: bootctl installs the signed copy,
-    and sbctl signs it again whenever systemd updates it."""
-    _chroot("sbctl", "create-keys")
-    enroll: list[str | Path] = ["arch-chroot", "-S", MNT]
-    enroll += ["sbctl", "enroll-keys", "--microsoft"]
-    if firmware == "setup" and not succeeds(*enroll):
-        warn("Could not enrol the Secure Boot keys: phase 4 says what is left")
-    boot = str(secureboot.BOOT_EFI)
-    signed = str(secureboot.SIGNED_BOOT_EFI)
-    _chroot("sbctl", "sign", "--save", "--output", signed, boot)
-
-
-def _install_boot_loader(entry: bool = True) -> None:
-    """systemd-boot, with a loader entry for the kernel and its initramfs
-    unencrypted; encrypted, it finds the unified kernel image by itself."""
-    _chroot("bootctl", "install")
-    if entry:
-        path = MNT / "boot/loader/entries/arch.conf"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            "title   Arch Linux\n"
-            "linux   /vmlinuz-linux\n"
-            "initrd  /initramfs-linux.img\n"
-            f"options {_command_line(False)}\n"
-        )
-    # No menu to wait at: holding Space at power-on still brings it up.
-    loader = MNT / "boot/loader/loader.conf"
-    loader.parent.mkdir(parents=True, exist_ok=True)
-    text = loader.read_text() if loader.exists() else ""
-    if not re.search(r"^timeout\b", text, re.MULTILINE):
-        loader.write_text(text + "timeout 0\n")
-
-
-def _copy_installer(user: str) -> None:
-    """Leave this installer in the new home, to run phases 3 and 4 from."""
-    copy = Path("home", user, INSTALLER_DIR.name)
+def _copy_installer(user: str) -> Path:
+    """Leave this repo in the new home, git history and all: the flake is
+    built from it, and phases 2 and 3 run from it."""
+    copy = MNT / "home" / user / INSTALLER_DIR.name
     ignore = shutil.ignore_patterns("__pycache__")
-    shutil.copytree(INSTALLER_DIR, MNT / copy, ignore=ignore)
-    _chroot("chown", "--recursive", f"{user}:", f"/{copy}")
+    shutil.copytree(INSTALLER_DIR, copy, ignore=ignore, symlinks=True)
+    return copy
 
 
-def _chroot(*command: str, data: str | None = None) -> None:
-    run("arch-chroot", "-S", MNT, *command, data=data)
+def _create_keys() -> None:
+    """Secure Boot keys of the new system's own, made before nixos-install,
+    whose lanzaboote signs systemd-boot and the kernel images with them."""
+    keys = MNT / SBCTL
+    keys.mkdir(mode=0o700, parents=True, exist_ok=True)
+    run(
+        *NIX, "shell", "nixpkgs#sbctl", "--command", "sbctl", "create-keys",
+        "--database-path", keys / "GUID", "--export", keys / "keys",
+    )  # fmt: skip
+
+
+def _enroll_keys(firmware: str) -> None:
+    """Enrol the keys, Microsoft's beside them (a graphics card's firmware
+    is signed by Microsoft), if the firmware lets them be: in Setup Mode."""
+    if firmware != "setup":
+        return
+    enroll: list[str | Path] = ["nixos-enter", "--root", MNT, "--"]
+    if not succeeds(*enroll, "sbctl", "enroll-keys", "--microsoft"):
+        warn("Could not enrol the Secure Boot keys: phase 3 says what is left")
+
+
+def _enter(*command: str, data: str | None = None) -> None:
+    run("nixos-enter", "--root", MNT, "--", *command, data=data)

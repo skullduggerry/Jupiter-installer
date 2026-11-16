@@ -11,27 +11,37 @@ case ${1-} in
         ;;
 esac
 
-repo=${INSTALLER_REPO:-https://github.com/skullduggerry/Jupiter-installer.git}
+repo=${INSTALLER_REPO:-https://github.com/skullduggerry/Jupiter-nixos.git}
 dir=$HOME/$(basename "$repo" .git)
 # Run from a clone, that clone is the installer, wherever it is and whatever
 # it is called; piped from curl, there is none yet.
 if [[ -n ${BASH_SOURCE[0]-} ]]; then
     self=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
-    if [[ -f $self/jupiter/__main__.py ]]; then
+    if [[ -f $self/jupiter_nixos/__main__.py ]]; then
         dir=$self
     fi
 fi
 
-# The live ISO has Python, but not git.
-command -v git >/dev/null || pacman -Sy --noconfirm git
+# The ISO has neither git nor Python: each comes from nixpkgs for its call.
+from_nixpkgs() {
+    nix --extra-experimental-features 'nix-command flakes' \
+        shell "nixpkgs#$1" --command "$@"
+}
+git() {
+    if command -v git >/dev/null; then command git "$@"; else from_nixpkgs git "$@"; fi
+}
+python3() {
+    if command -v python3 >/dev/null; then command python3 "$@"; else from_nixpkgs python3 "$@"; fi
+}
 
 if [[ -d $dir/.git ]]; then
     # Offline, or a clone with commits its origin lacks: it runs as it is.
     git -C "$dir" pull --ff-only ||
         echo "bootstrap.sh: could not update $dir: running it as it is" >&2
-elif [[ ! -f $dir/jupiter/__main__.py ]]; then
-    git clone "$repo" "$dir"
+elif [[ ! -f $dir/jupiter_nixos/__main__.py ]]; then
+    # INSTALLER_REF: a branch or tag other than the default one.
+    git clone ${INSTALLER_REF:+--branch "$INSTALLER_REF"} "$repo" "$dir"
 fi
 cd "$dir"
 # Piped from curl, stdin is the script: read the answers from the terminal.
-exec python3 -m jupiter "$@" </dev/tty
+python3 -m jupiter_nixos "$@" </dev/tty
