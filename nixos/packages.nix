@@ -43,6 +43,7 @@ in
     stylua
     lua-language-server
     nixfmt
+    actionlint
   ];
 
   virtualisation.docker.enable = true;

@@ -229,11 +229,13 @@ What works and how it was checked, as of this branch's first commit:
      theme's import are fixed paths in Python, QML and CSS.
   5. Merge the dotfiles' branch to their `main` before this repo's: until
      then the lock screen's finger fails on NixOS (the password works).
-  6. CI: the workflow's `nix` job evaluates `hosts/example`; the suites run
-     in the Arch container, which has no Nix, so the evaluation tests are
-     skipped there.
+  6. CI checks every push to any Jupiter repo against Arch and NixOS
+     (Jupiter-testing's `.github/PROJECT_STRUCTURE.md`, "CI"). Its layout
+     takes NixOS from the Jupiter-installer branch `NIXOS_BRANCH` names in
+     Jupiter-testing's `scripts/ci-repos.sh` until Jupiter-nixos exists.
   7. Rename: create `skullduggerry/Jupiter-nixos` from this branch, then
-     `bootstrap.sh`'s default `INSTALLER_REPO` is right.
+     `bootstrap.sh`'s default `INSTALLER_REPO` is right, and CI finds it
+     by itself.
 
 ## Developing
 
