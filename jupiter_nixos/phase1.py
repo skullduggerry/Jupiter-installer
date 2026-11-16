@@ -400,7 +400,8 @@ def _make_data_disk(volume: DataDisk, passphrase: str) -> tuple[str, str]:
     partition = table["partitiontable"]["partitions"][0]["node"]
     luks = _encrypt(partition, volume.name, passphrase)
     keys = MNT / KEYS
-    keys.mkdir(mode=0o700, exist_ok=True)
+    # /mnt/etc is not there yet: nixos-install makes the rest of it.
+    keys.mkdir(mode=0o700, parents=True, exist_ok=True)
     key = keys / f"{volume.name}.key"
     # Created 0400, so no one else could ever read it, then filled.
     with os.fdopen(
