@@ -1,7 +1,7 @@
-"""Where the dotfiles come from: point these at your fork, and the flake's
-`dotfiles` input (flake.nix), from which the system takes their root files.
+"""Where the dotfiles come from: point these at your fork (and, for NixOS,
+flake.nix's `dotfiles` input, from which the system takes their root files).
 
-Either value can also be set in the environment. Phase 3 clones over
+Either value can also be set in the environment. Phase 4 clones over
 HTTPS, which needs no keys, and pushes over SSH.
 """
 

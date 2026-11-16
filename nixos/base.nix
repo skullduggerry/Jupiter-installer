@@ -54,7 +54,7 @@ in
   boot.loader.grub.enable = false;
 
   # The root volume's line in the initrd's crypttab: its volume key measured
-  # into PCR 15 as it opens (the TPM binding relies on it), and once phase 3
+  # into PCR 15 as it opens (the TPM binding relies on it), and once phase 4
   # enrolled the TPM, the TPM tried first and the key it must have.
   boot.initrd.luks.devices = lib.mkIf encrypted {
     root = {

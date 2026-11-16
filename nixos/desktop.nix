@@ -76,7 +76,7 @@ in
     wl-clipboard
     wf-recorder
     zenity
-    # The dotfiles' helpers, and phase 3's keyring step, which talks to
+    # The dotfiles' helpers, and phase 4's keyring step, which talks to
     # gnome-keyring over D-Bus with python-gobject.
     (python3.withPackages (python: [
       python.python-dateutil

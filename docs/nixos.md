@@ -1,43 +1,46 @@
 # Jupiter on NixOS
 
-How this branch (to become the repo **Jupiter-nixos**) installs the same
-desktop as [Jupiter-installer](https://github.com/skullduggerry/Jupiter-installer)
-does on Arch, what it takes over unchanged, what NixOS made different, and
-what is still to do. Arch stays supported: Jupiter-installer keeps its
-`main`, Jupiter-dotfiles serves both, and Jupiter-testing checks all of them.
+How the installer sets up the same desktop on NixOS as on Arch: what it
+shares with the Arch side, what NixOS made different, and what is still to
+do. One installer serves both: `jupiter/distro.py` tells which system it
+runs on (archiso's mark, `VARIANT_ID=installer` on the NixOS ISO, `ID=` in
+`/etc/os-release` once installed) and refuses any other, as phase 1 erases
+disks. Jupiter-dotfiles serves both, and Jupiter-testing checks both.
 
 ## The idea
 
-The Arch installer is imperative: four Python phases run pacman, paru,
+The Arch side is imperative: four Python phases run pacman, paru,
 `arch-chroot` and `sudo` in order. On NixOS the system is a function of its
 configuration, so everything that phase 2, phase 3 and the root half of
-phase 4 do with packages and files becomes a NixOS module in `nixos/`, and
-what remains imperative stays in Python:
+phase 4 do with packages and files is a NixOS module in `nixos/`, and what
+remains imperative stays in Python, in `jupiter/nixos/`, built on the Arch
+side's own code where the work is the same:
 
-| | Arch (Jupiter-installer) | NixOS (this repo) |
+| | On Arch | On NixOS |
 |---|---|---|
-| Disks, LUKS, Btrfs, data disks | phase 1 | phase 1, the same code |
+| Disks, LUKS, Btrfs, data disks | phase 1 (`jupiter/phase1.py`) | phase 1, the same functions |
 | Base system, boot, user, drivers | phase 1 (pacstrap, mkinitcpio, sbctl) | `nixos/base.nix`, `secureboot.nix`; phase 1 runs `nixos-install` |
-| Desktop packages and services | phase 2 (`packages/core.txt`) | `nixos/desktop.nix` |
-| Your packages | phase 3 (`pacman.txt`, `aur.txt`) | `nixos/packages.nix` |
+| Desktop packages and services | phase 2 (`packages/core.txt`) | `nixos/desktop.nix`, built by phases 2 and 3 |
+| Your packages | phase 3 (`pacman.txt`, `aur.txt`) | `nixos/packages.nix`, the same build |
 | Root files of the dotfiles, greetd, PAM, finger in sudo/polkit, zsh | phase 4 (`install-system.sh`, `install-greeter.sh`, `/etc/pam.d` edits, `chsh`) | `nixos/login.nix`, `base.nix` |
-| Dotfiles linked into the home, theme, keyring, fingerprint enrolment, TPM | phase 4 | phase 3 (`jupiter_nixos/dotfiles.py`, `keyring.py`, `tpm.py`) |
-| Updating | `bootstrap.sh 2 3 4` (pacman -Syu, paru) | `bootstrap.sh 2` (git pull, `nixos-rebuild switch`) |
+| Dotfiles linked into the home, theme, keyring, fingerprint, TPM | phase 4 | phase 4: Arch's linking, keyring and TPM binding, with `jupiter/nixos/dotfiles.py` and `tpm.py` for the rest |
+| Updating | `bootstrap.sh 2 3 4` (pacman -Syu, paru) | `bootstrap.sh 2 4` (git pull, `nixos-rebuild switch`) |
 
-The phases here are:
+The phases on NixOS:
 
-1. **Install**, as root from the NixOS ISO: the Arch phase 1's questions,
-   disk layout and encryption, then `hosts/<hostname>/settings.json` (the
-   answers and what was found), `hardware-configuration.nix`
+1. **Install**, as root from the NixOS ISO: Arch's questions, disk layout
+   and encryption, then `hosts/<hostname>/settings.json` (the answers and
+   what was found), `hardware-configuration.nix`
    (`nixos-generate-config --no-filesystems`), Secure Boot keys, and
    `nixos-install --flake` from the copy of this repo it leaves in the new
    home.
-2. **System**, as your user: `nixos-rebuild switch --sudo --flake
-   ~/Jupiter-nixos#<host>`. Run again after any change to `nixos/` or the
-   settings, and to update.
-3. **Dotfiles**, as your user: the Arch phase 4 minus what is declared.
+2. and 3. **The system**, as your user: one `nixos-rebuild switch --sudo
+   --flake ~/Jupiter-installer#<host>` a run, whichever of the two is
+   named. Run again after any change to `nixos/` or the settings, and to
+   update.
+4. **Dotfiles**, as your user: Arch's phase 4 minus what is declared.
 
-`bootstrap.sh` runs 1 on the ISO and 2 3 otherwise, as on Arch.
+`bootstrap.sh` runs 1 on the ISO and 3 4 otherwise, as on Arch.
 
 ## Layout
 
@@ -51,7 +54,8 @@ nixos/packages.nix        pacman.txt and aur.txt; the firewall's KDE Connect rul
 nixos/login.nix           greetd, its PAM stacks, root's greeter copy, udev, drop-ins, /usr/share links
 nixos/desktop-entries.py  the dotfiles' uwsm-desktop-entries.py, run as the profile is built
 hosts/<name>/             settings.json + hardware-configuration.nix, one per machine
-jupiter_nixos/            the Python phases
+jupiter/nixos/            the NixOS phases, on the Arch side's code (jupiter/)
+jupiter/distro.py         which system this is
 ```
 
 Each machine is a folder of `hosts/`, and the flake makes
@@ -92,7 +96,7 @@ the system declares), and where a path is fixed in QML or CSS,
 - **greetd waits for the greeter.** On Arch greetd is enabled by phase 4,
   after `install-greeter.sh` put the greeter in `/etc/greetd`. Here it is
   part of the system from the first boot, so it starts only once
-  `/etc/greetd/hyprland.lua` exists (phase 3); until then a text console
+  `/etc/greetd/hyprland.lua` exists (phase 4); until then a text console
   logs in.
 - **greetd's command.** `config.toml` is read from the dotfiles; its
   `Hyprland` gets a store path, as greetd's own PATH has no system programs.
@@ -144,7 +148,7 @@ the system declares), and where a path is fixed in QML or CSS,
 - **Firewall.** NixOS's is on; Arch's ufw is installed but off. KDE
   Connect's ports are opened to the private ranges only (nftables), where
   `programs.kdeconnect` would open them to every network.
-- **The TPM's crypttab options** are declared, not edited: phase 3 writes
+- **The TPM's crypttab options** are declared, not edited: phase 4 writes
   `tpm` and `volumeKey` into the machine's settings and rebuilds, and
   `base.nix` adds `tpm2-device=auto` and `fixate-volume-key=` to the
   initrd's crypttab line. The root is always named `/dev/mapper/root`, so
@@ -177,7 +181,7 @@ the system declares), and where a path is fixed in QML or CSS,
 ## Why nixos-unstable, not a stable release
 
 Checked against nixos-26.05, the stable release when this was written, with
-the dotfiles of the same branch:
+the dotfiles of the time:
 
 - **Hyprland 0.55.4 rejects the desktop's config**
   (`Hyprland --verify-config`): `cursor.lua` listens for an event it does
@@ -203,63 +207,49 @@ release to carry them. Rolling, as Arch is, stays the simplest match.
 
 ## Status
 
-What works and how it was checked, as of this branch's first commit:
+What works and how it is checked:
 
 - **Evaluated:** `nixos/` with `hosts/example` evaluates to a complete
-  system (`config.system.build.toplevel.drvPath`) against nixos-unstable
-  (26.11pre, Quickshell 0.3.2, Hyprland 0.57), with lanzaboote's options
-  stood in for (GitHub, where lanzaboote lives, was not reachable from the
-  machine this was written on).
+  system against nixos-unstable (Quickshell 0.3.2, Hyprland 0.57), in CI
+  with the real lanzaboote and the dotfiles of the push.
 - **Built and run:** `finger-asked` (an empty answer succeeds, a typed one
-  fails, with no PATH), `disk-encrypted`, and root's greeter tree.
-- **Tested** (Jupiter-testing, `nixos/`): phase 1 against stand-in
-  commands, phases 2 and 3, `desktop-entries.py`, the settings schema, and
-  the generated PAM stacks.
+  fails, with no PATH), `disk-encrypted`, and root's greeter tree; in CI
+  the dotfiles' Hyprland config verifies with NixOS's Hyprland, and their
+  QML suites pass in NixOS's Quickshell.
+- **Tested** (Jupiter-testing, `installer/test_nixos_*.py` and
+  `installer/security/test_nixos_*.py`, beside Arch's): phase 1 against
+  stand-in commands, phases 2 to 4, the TPM step, `desktop-entries.py`,
+  detection, the settings schema, and the generated PAM stacks.
 - **Not yet done** — the roadmap, roughly in order:
-  1. `flake.lock`: run `nix flake lock` where GitHub is reachable and commit
-     it; until then `nixos-install` locks on first use.
+  1. `flake.lock`: run `nix flake lock` and commit it; until then
+     `nixos-install` locks on first use.
   2. Install in a VM end to end. Jupiter-testing's `vm/` rig boots the Arch
      ISO; it needs the NixOS ISO's kernel and console, and phase 1's answers.
-     NixOS's own test driver (`nixosTest`) could cover phases 2 and 3 and
+     NixOS's own test driver (`nixosTest`) could cover phases 2 to 4 and
      log in at the greeter.
   3. Check on hardware that lanzaboote's stub sets `StubInfo`, which
-     `tpm.py` reads to tell that a signed image started this boot.
+     `jupiter/tpm.py` reads to tell that a signed image started this boot.
   4. Find the rest of what the `/usr/share` links stand in for without them:
      the greeter's sessions, the keyboard page's layouts and the GTK
      theme's import are fixed paths in Python, QML and CSS.
-  5. Merge the dotfiles' branch to their `main` before this repo's: until
-     then the lock screen's finger fails on NixOS (the password works).
-  6. CI checks every push to any Jupiter repo against Arch and NixOS
-     (Jupiter-testing's `.github/PROJECT_STRUCTURE.md`, "CI"). Its layout
-     takes NixOS from the Jupiter-installer branch `NIXOS_BRANCH` names in
-     Jupiter-testing's `scripts/ci-repos.sh` until Jupiter-nixos exists.
-  7. Rename: create `skullduggerry/Jupiter-nixos` from this branch, then
-     `bootstrap.sh`'s default `INSTALLER_REPO` is right, and CI finds it
-     by itself.
+  5. Merge the dotfiles' branch to their `main` with this one: until then
+     the lock screen's finger fails on NixOS (the password works).
 
 ## Developing
 
-The three other repos sit next to this one, as on Arch: Jupiter-testing
-finds this one at `../Jupiter-nixos` or `JUPITER_NIXOS`. While this is a
-branch of Jupiter-installer:
+As for the Arch side: `./check.sh` lints and tests this repo, both systems'
+suites, and `./check.sh check all` every repo. The evaluation tests need
+Nix and a nixpkgs (`JUPITER_NIXPKGS`, or Nix's `<nixpkgs>`), and are
+skipped without them; nixfmt formats `*.nix` where it is installed.
 
 ```bash
-git -C ~/Jupiter-installer worktree add ../Jupiter-nixos <this branch>
-cd ~/Jupiter-nixos && ./check.sh          # lint and test this repo
 nix eval .#nixosConfigurations.example.config.system.build.toplevel.drvPath
-```
-
-To install from the branch before the repo exists, on the ISO:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/skullduggerry/Jupiter-installer/<branch>/bootstrap.sh |
-    INSTALLER_REPO=https://github.com/skullduggerry/Jupiter-installer.git INSTALLER_REF=<branch> bash
 ```
 
 ## Customising
 
 As on Arch: fork this repo and the dotfiles, change `nixos/packages.nix`,
-point `flake.nix`'s `dotfiles` input and `jupiter_nixos/config.py` (or
+point `flake.nix`'s `dotfiles` input and `jupiter/config.py` (or
 `DOTFILES_REPO`, `DOTFILES_PUSH_URL`) at your fork, and commit your
 machine's `hosts/<name>/` to it. The rest of `nixos/` merges cleanly from
 upstream. The root files of the dotfiles come from `flake.lock`'s revision;

@@ -161,7 +161,7 @@ in
     };
   };
 
-  # The greeter's files are the user's theme, which phase 3 installs
+  # The greeter's files are the user's theme, which phase 4 installs
   # (install-greeter.sh): until then greetd would restart a greeter that
   # cannot start, so it waits, and a text console (ctrl+alt+F2) logs in.
   systemd.services.greetd.unitConfig.ConditionPathExists = "/etc/greetd/hyprland.lua";

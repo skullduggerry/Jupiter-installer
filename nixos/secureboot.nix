@@ -4,7 +4,7 @@
 # them, Microsoft's beside them, where the firmware is in Setup Mode;
 # lanzaboote then signs systemd-boot and each generation's kernel image,
 # its command line and initrd inside it, and nothing else boots under
-# Secure Boot. Phase 3 binds the disk to the TPM (tpm.py), or says what is
+# Secure Boot. Phase 4 binds the disk to the TPM (tpm.py), or says what is
 # still missing for it. An unencrypted system boots unsigned systemd-boot.
 {
   config,

@@ -21,7 +21,7 @@ fi
 # The dotfiles where phase 4 clones them, when they are there.
 if [[ -z ${JUPITER_DOTFILES-} ]]; then
     name=$(PYTHONPATH=$installer python3 -c \
-        'import pathlib, jupiter_nixos.config as c; print(pathlib.Path(c.DOTFILES_REPO).stem)')
+        'import pathlib, jupiter.config as c; print(pathlib.Path(c.DOTFILES_REPO).stem)')
     [[ -d $HOME/$name ]] && export JUPITER_DOTFILES=$HOME/$name
 fi
-JUPITER_NIXOS=$installer exec "$testing/check.sh" "$@"
+JUPITER_INSTALLER=$installer exec "$testing/check.sh" "$@"

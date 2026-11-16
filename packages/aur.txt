@@ -1,0 +1,13 @@
+# Phase 3: packages from the AUR, installed with paru after you review each
+# PKGBUILD. One per line, `#` starts a comment.
+
+wallust #if AUR package unavaiable use cargo
+onlyoffice-bin
+brave-origin-bin
+vesktop-bin
+claude-desktop
+revanced-cli-bin
+# A RemoteDesktop portal for KDE Connect's remote input, which Hyprland's
+# portal lacks; the dotfiles' xdg-desktop-portal/hyprland-portals.conf uses it.
+hypr-kdeconnect-fix-git
+

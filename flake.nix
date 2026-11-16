@@ -21,7 +21,7 @@
     };
     # What the dotfiles install as root (the login screen's PAM stack and its
     # root copy, udev rules, the user units' drop-ins), from this revision.
-    # The home's clone, which phase 3 links into ~/.config, is separate.
+    # The home's clone, which phase 4 links into ~/.config, is separate.
     dotfiles = {
       url = "github:skullduggerry/Jupiter-dotfiles";
       flake = false;

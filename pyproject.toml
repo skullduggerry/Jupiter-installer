@@ -1,7 +1,7 @@
 # The settings of the tools Jupiter-testing's checks run, which editors read
 # too. The installer itself needs nothing beyond Python's standard library,
-# but for phase 3's keyring step: python-gobject, which nixos/desktop.nix
-# installs.
+# but for phase 4's keyring step: python-gobject, which phase 2 installs
+# (nixos/desktop.nix on NixOS).
 
 [tool.ruff]
 line-length = 79

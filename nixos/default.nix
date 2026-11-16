@@ -102,7 +102,7 @@ in
           tpm = mkOption {
             type = types.bool;
             default = false;
-            description = "Whether the root volume has a TPM slot (phase 3 enrols it), which the initrd then tries.";
+            description = "Whether the root volume has a TPM slot (phase 4 enrols it), which the initrd then tries.";
           };
           volumeKey = mkOption {
             type = types.nullOr (types.strMatching "[0-9a-f]{64}");

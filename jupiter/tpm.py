@@ -1,20 +1,19 @@
-"""Unlocking the encrypted system with the TPM: phase 3's last step.
+"""Unlocking the encrypted system with the TPM: phase 4's last step.
 
-Where Secure Boot is on with this system's own keys and a kernel image they
-signed (lanzaboote's) started this boot, the root volume gets a TPM slot
-bound to PCR 7 (Secure Boot's state and keys) and to PCR 15 still zero,
-which systemd-cryptsetup extends with the volume key as soon as it opens a
-volume (tpm2-measure-pcr in the initrd's crypttab, nixos/base.nix): the TPM
-gives the key out only before any volume is open, in this initrd, so a
-volume an attacker put in place of this one, with its UUID, cannot lead to
-it. The root's crypttab line is declared, so this step records in
-hosts/<name>/settings.json that the volume has a TPM slot (tpm2-device=auto)
-and the hash of its volume key (fixate-volume-key, with which the initrd
-refuses any other volume, so no passphrase is ever typed into a system on
-one), and rebuilds the system (phase 2). A recovery key is added once, and
-shown once.
+Where Secure Boot is on with this system's own keys and the kernel image
+they signed started this boot, the root volume gets a TPM slot bound to
+PCR 7 (Secure Boot's state and keys) and to PCR 15 still zero, which
+systemd-cryptsetup extends with the volume key as soon as it opens a volume
+(tpm2-measure-pcr in /etc/crypttab): the TPM gives the key out only before
+any volume is open, in this initramfs, so a volume an attacker put in place
+of this one, with its UUID, cannot lead to it. fixate-volume-key makes the
+initramfs refuse such a volume outright, so no passphrase is ever typed into
+the system on it. The image's command line names the root by that opened
+volume (root=/dev/mapper/<name>), so nothing a volume was not opened for is
+ever mounted as the root: an install that named it by its file system's UUID
+is changed to. A recovery key is added once, and shown once.
 
-Run again (bootstrap.sh 3), it changes nothing while the binding still
+Run again (bootstrap.sh 4), it changes nothing while the binding still
 matches the TPM's PCR 7, and enrols again where a firmware or dbx update
 changed it. Where something is missing (no TPM, Secure Boot off, keys not
 enrolled), it says what, and the passphrase keeps unlocking the disk.
@@ -23,28 +22,24 @@ enrolled), it says what, and the passphrase keeps unlocking the disk.
 import hashlib
 import json
 import os
+import re
 import struct
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
-from . import secureboot, system
-from .common import (
-    HOSTS,
-    host,
-    log,
-    output,
-    read_settings,
-    run,
-    succeeds,
-    warn,
-    write_settings,
-)
+from . import secureboot
+from .common import log, output, run, succeeds, warn
 
 TPM = Path("/sys/class/tpm/tpm0")
 SYSTEMD_VENDOR = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
 # Set by systemd-stub: this boot came from a unified kernel image.
 STUB_INFO = secureboot.EFIVARS / f"StubInfo-{SYSTEMD_VENDOR}"
+CRYPTTAB = Path("/etc/crypttab")
+# The command line mkinitcpio builds into the unified kernel image.
+CMDLINE = Path("/etc/kernel/cmdline")
+ROOT_BY_UUID = re.compile(r"(?<!\S)root=UUID=\S+")
 MEASURE_LOG = Path("/run/log/systemd/tpm2-measure.log")
 ZERO = "0" * 64
 # Always given: systemd-cryptenroll 262 binds to no PCRs at all without it.
@@ -70,6 +65,7 @@ def main() -> None:
     if volume is None:
         return
     name, device = volume
+    named = _name_root(name)
     if not (TPM / "tpm_version_major").exists() or (
         (TPM / "tpm_version_major").read_text().strip() != "2"
     ):
@@ -82,11 +78,11 @@ def main() -> None:
         warn("Until then the passphrase unlocks the disk at boot.")
         return
     changed = _bind(device)
-    changed = _declare(name, device) or changed
+    changed = _fixate(name, device) or changed
     changed = _recovery(device) or changed
     if changed:
         _header_backup(device)
-    else:
+    elif not named:
         log("The TPM unlocks the disk; nothing to change")
 
 
@@ -107,8 +103,38 @@ def root_volume() -> tuple[str, str] | None:
     return None
 
 
-def _missing() -> list[str]:
-    """What the TPM binding still needs, as steps for the user."""
+def _name_root(name: str) -> bool:
+    """The image's command line names the root by its opened volume, as
+    phase 1 writes it (its _command_line says why); True if it named the
+    file system's UUID until now (and the image was built again). PCR 7
+    does not cover the command line: the TPM's slot stays as it is."""
+    try:
+        old = CMDLINE.read_text()
+    except OSError:  # no unified kernel image: not phase 1's encrypted boot
+        return False
+    new = ROOT_BY_UUID.sub(f"root=/dev/mapper/{name}", old)
+    if new == old:
+        return False
+    _install(CMDLINE, new, mode="0644")
+    try:
+        run("sudo", "mkinitcpio", "--allpresets")
+    except subprocess.CalledProcessError:
+        # The image would still name the UUID: the old line back, so a
+        # rerun sees it and builds the image again.
+        _install(CMDLINE, old, mode="0644")
+        raise
+    log(
+        f"The kernel image now names the root as /dev/mapper/{name}, not by "
+        "its file system's UUID, which a disk without encryption could carry"
+    )
+    return True
+
+
+def _missing(image: str = "") -> list[str]:
+    """What the TPM binding still needs, as steps for the user; image names
+    the signed kernel image a boot must start from (Arch's UKI unless
+    given)."""
+    image = image or f"the signed kernel image ({secureboot.UKI})"
     firmware = secureboot.state()
     if firmware == "none":
         return ["This firmware has no Secure Boot, which the TPM needs."]
@@ -116,7 +142,7 @@ def _missing() -> list[str]:
     if not status.get("installed"):
         return [
             "This system has no Secure Boot keys of its own: create them "
-            "with `sudo sbctl create-keys`, then run bootstrap.sh 2 3 again."
+            "with `sudo sbctl create-keys`, then run bootstrap.sh 4 again."
         ]
     if firmware == "setup":
         enroll = ["sudo", "sbctl", "enroll-keys", "--microsoft"]
@@ -125,20 +151,19 @@ def _missing() -> list[str]:
         log("Enrolled the Secure Boot keys, with Microsoft's")
         return [
             "Reboot, turn Secure Boot on in the firmware's setup if it is "
-            "not, then run bootstrap.sh 3 again to bind the disk to the TPM."
+            "not, then run bootstrap.sh 4 again to bind the disk to the TPM."
         ]
     if firmware == "off":
         return [
             "Secure Boot is off: turn it on in the firmware's setup, then "
-            "run bootstrap.sh 3 again. If the firmware still has its own "
-            "keys, erase them there first (Setup Mode); phase 3 enrols "
+            "run bootstrap.sh 4 again. If the firmware still has its own "
+            "keys, erase them there first (Setup Mode); phase 4 enrols "
             "this system's."
         ]
     if not STUB_INFO.exists():
         return [
-            "This boot did not start from a kernel image lanzaboote signed: "
-            "boot the system's newest generation, then run bootstrap.sh 3 "
-            "again."
+            f"This boot did not start from {image}: boot it, then run "
+            "bootstrap.sh 4 again."
         ]
     return []
 
@@ -188,30 +213,51 @@ def _bind(device: str) -> bool:
     return True
 
 
-def _declare(name: str, device: str) -> bool:
-    """Record in this machine's settings that the root has a TPM slot, and
-    its volume key's hash once it is measured, and rebuild the system with
-    them in the initrd's crypttab (nixos/base.nix); True if they changed.
-    tpm2-device=auto waits for a TPM, so only a system with a TPM slot gets
-    it."""
-    machine = host()
-    old = read_settings(machine)
+def _fixate(name: str, device: str) -> bool:
+    """The root's crypttab line tries the TPM slot (tpm2-device=auto, which
+    systemd-cryptsetup needs to try it at all, and which waits for a TPM, so
+    only a system with a TPM slot gets it), measures its volume key into
+    PCR 15 and expects the key it has; True if the line changed (and the
+    image was built again)."""
     uuid = output("sudo", "cryptsetup", "luksUUID", device).strip()
-    key = _volume_key_id(name, uuid) or old.get("volumeKey")
-    new = old | {"tpm": True, "volumeKey": key}
-    if new == old:
+    # Root's alone (0600, as systemd's package ships it): read through sudo.
+    old = output("sudo", "cat", CRYPTTAB)
+    lines = old.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        fields = line.split()
+        if not fields or fields[0] != name:
+            continue
+        options = fields[3].split(",") if len(fields) > 3 else []
+        # systemd-cryptsetup tries the TPM slot only when told to.
+        wanted = ["tpm2-device=auto", "tpm2-measure-pcr=yes"]
+        key = _volume_key_id(name, uuid)
+        if key:
+            wanted.append(f"fixate-volume-key={key}")
+        kept = [
+            option
+            for option in options
+            if option.split("=")[0]
+            not in {"tpm2-device", "tpm2-measure-pcr", "fixate-volume-key"}
+        ]
+        new = [*kept, *wanted]
+        if new == options:
+            return False
+        fields[2:] = [fields[2] if len(fields) > 2 else "none", ",".join(new)]
+        lines[index] = " ".join(fields) + "\n"
+        break
+    else:
         return False
-    write_settings(HOSTS / machine, new)
+    _install(CRYPTTAB, "".join(lines))
     try:
-        system.rebuild(machine)
+        run("sudo", "mkinitcpio", "--allpresets")
     except subprocess.CalledProcessError:
-        # The initrd would not have the new line: the old settings back, so
-        # a rerun sees them and rebuilds again.
-        write_settings(HOSTS / machine, old)
+        # The image would not have the new line: the old one back, so a
+        # rerun sees it missing and builds the image again.
+        _install(CRYPTTAB, old)
         raise
     if not key:
         log(
-            "Reboot and run bootstrap.sh 3 again: the volume key's hash is "
+            "Reboot and run bootstrap.sh 4 again: the volume key's hash is "
             "measured from the next boot on"
         )
     return True
@@ -269,3 +315,11 @@ def _header_backup(device: str) -> None:
     run("sudo", "chown", f"{os.getuid()}:{os.getgid()}", path)
     path.chmod(0o400)
     log(f"Wrote {path}: copy it off this computer, then delete it here")
+
+
+def _install(path: Path, text: str, mode: str = "0600") -> None:
+    """Replace a root-owned file, keeping the old one as path~."""
+    with tempfile.NamedTemporaryFile("w", suffix=path.suffix) as new:
+        new.write(text)
+        new.flush()
+        run("sudo", "install", "-b", "-m", mode, new.name, path)
