@@ -4,7 +4,9 @@
 # and hardware-configuration.nix (nixos-generate-config's). Each becomes
 # nixosConfigurations.<folder>, built with nixos-install from the ISO and
 # with `bootstrap.sh 2` (nixos-rebuild) after. hosts/example is the one CI
-# evaluates. docs/nixos.md says what each module takes over from the Arch
+# evaluates. flake.lock pins each input below to a revision, which
+# .github/workflows/update-flake-lock.yml moves weekly after CI's checks;
+# it locks a changed input when this file changes. docs/nixos.md says what each module takes over from the Arch
 # installer's phases.
 {
   description = "Jupiter on NixOS: Hyprland, Quickshell and the Jupiter dotfiles";

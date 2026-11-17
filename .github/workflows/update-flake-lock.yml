@@ -2,13 +2,16 @@
 # the flake's inputs (nixpkgs' nixos-unstable, lanzaboote's release, the
 # dotfiles' root files), so every machine and CI build the same system; a
 # machine's rebuild moves only when the lock here does, which its
-# `bootstrap.sh` pulls. Weekly, and on demand: the inputs are updated, then
-# Jupiter-testing's scripts/nixos-check.sh (CI's NixOS job) runs on the new
-# lock, and only if it passes is the lock committed to the branch this runs
-# on, and check.yml started on that commit for the rest of the checks.
+# `bootstrap.sh` pulls. Weekly, and on demand, every input is updated; on a
+# push that changes flake.nix, only what it changed is locked (nix flake
+# lock). Then Jupiter-testing's scripts/nixos-check.sh (CI's NixOS job) runs
+# on the new lock, and only if it passes is the lock committed to the
+# branch this runs on, and check.yml started on that commit for the rest.
 name: Update flake.lock
 
 on:
+  push:
+    paths: [flake.nix]
   schedule:
     - cron: "41 2 * * 1"
   workflow_dispatch:
@@ -42,8 +45,10 @@ jobs:
           bash Jupiter-testing/scripts/ci-repos.sh checkout "$BRANCH"
       - name: Update the inputs
         working-directory: Jupiter-installer
+        env:
+          EVENT: ${{ github.event_name }}
         run: |
-          nix flake update
+          if [ "$EVENT" = push ]; then nix flake lock; else nix flake update; fi
           git diff --stat -- flake.lock
       - name: Check the system on the new lock
         run: bash Jupiter-testing/scripts/nixos-check.sh
