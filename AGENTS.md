@@ -24,7 +24,7 @@ Commit and push straight to `main`, here and in Jupiter-dotfiles and Jupiter-tes
 | `jupiter/secureboot.py`, `tpm.py`, `keyring.py` | Secure Boot keys, the TPM binding (phase 4's last step), the login keyring |
 | `jupiter/config.py` | where the dotfiles come from (fork here) |
 | `jupiter/nixos/` | NixOS's phases: `phase1.py` (disks by Arch's code, then `hosts/<name>/` and `nixos-install`), `system.py` (phases 2 and 3: one `nixos-rebuild switch`), `dotfiles.py` (phase 4 by Arch's steps, less what the flake declares), `tpm.py`, `common.py` (a host's `settings.json`) |
-| `flake.nix`, `flake.lock`, `nixos/` | the NixOS system: `default.nix` declares `jupiter.settings` (the schema phase 1 writes) and imports `base`, `desktop`, `packages`, `login` (greetd and PAM), `secureboot` (lanzaboote) |
+| `flake.nix`, `flake.lock`, `nixos/` | the NixOS system: `default.nix` declares `jupiter.settings` (the schema phase 1 writes) and imports `base`, `desktop`, `packages`, `login` (greetd and PAM), `secureboot` (lanzaboote), `theme` (Stylix and home-manager) |
 | `hosts/<name>/` | one machine: `settings.json` (phase 1's answers) and `hardware-configuration.nix`; `hosts/example/` is what tests and CI evaluate |
 | `packages/*.txt` | Arch's package lists: `core.txt` (phase 2), `pacman.txt`, `aur.txt` (phase 3) |
 | `docs/` | for people: NixOS, and encrypting an existing install |

@@ -34,6 +34,7 @@ in
     ./packages.nix
     ./login.nix
     ./secureboot.nix
+    ./theme.nix
   ];
 
   options.jupiter = {

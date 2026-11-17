@@ -45,13 +45,14 @@ The phases on NixOS:
 ## Layout
 
 ```
-flake.nix                 nixpkgs (unstable), lanzaboote, the dotfiles (flake = false)
+flake.nix                 nixpkgs (unstable), lanzaboote, home-manager, Stylix, the dotfiles (flake = false)
 nixos/default.nix         options.jupiter: the settings' schema, and the imports
 nixos/base.nix            boot, initrd crypttab, file systems, zram, user, locale, GPUs
 nixos/secureboot.nix      lanzaboote, on an encrypted system
 nixos/desktop.nix         core.txt: Hyprland (uwsm), Quickshell, PipeWire, keyring, fonts, ...
 nixos/packages.nix        pacman.txt and aur.txt; the firewall's KDE Connect rules
 nixos/login.nix           greetd, its PAM stacks, root's greeter copy, udev, drop-ins, /usr/share links
+nixos/theme.nix           Stylix and home-manager: the console, fonts, btop, mpv, Zed; a specialisation per theme
 nixos/desktop-entries.py  the dotfiles' uwsm-desktop-entries.py, run as the profile is built
 hosts/<name>/             settings.json + hardware-configuration.nix, one per machine
 jupiter/nixos/            the NixOS phases, on the Arch side's code (jupiter/)
@@ -151,8 +152,9 @@ the system declares), and where a path is fixed in QML or CSS,
   iptables, NixOS's default: Docker writes iptables rules of its own, which
   nftables' NixOS module says do not work beside it without intervention.
 - **Updates come with the repo.** `flake.lock` names the exact revision of
-  each input (nixpkgs' nixos-unstable, lanzaboote's release, the dotfiles'
-  root files), so every machine and CI build the same system. A machine
+  each input (nixpkgs' nixos-unstable, lanzaboote's release, home-manager's
+  and Stylix's default branches, the dotfiles' root files and theme
+  schemes), so every machine and CI build the same system. A machine
   moves when its copy pulls a newer lock: `bootstrap.sh 2` pulls, then
   rebuilds. `.github/workflows/update-flake-lock.yml` updates the lock
   weekly (or on demand), runs CI's NixOS checks on it, and only then
@@ -180,6 +182,46 @@ the system declares), and where a path is fixed in QML or CSS,
   country phase 1 finds for the time zone.
 - **PipeWire's JACK:** NixOS deprecates the global JACK replacement; run
   JACK apps with `pw-jack`.
+
+## The theme: wallust, and Stylix beside it
+
+The dotfiles' wallust templates colour the shell, GTK, Qt, kitty and nvim
+on NixOS exactly as on Arch: `apply.sh` renders them when a theme is
+applied, with the Settings app's accent, font and glass. Those are choices
+made at runtime, so the templates are not built by Nix, and the live tint,
+`--shell-only` and themes made from a wallpaper work as on Arch.
+
+`nixos/theme.nix` adds Stylix for what the templates do not reach: the
+console's colours (the LUKS prompt and the text login among them),
+fontconfig's default families, and btop, mpv and Zed through home-manager.
+Its colours are the dotfiles' `.config/wallust/base16/<theme>.json`, the
+base16 slots nvim's template fills, which their `scripts/base16-schemes.py`
+renders from wallust's themes. Stylix's own GTK, Qt, kitty, nvim and
+Hyprland targets stay off: they would draw over the templates, without the
+glass.
+
+- **Pre-built themes.** The user's home-manager configuration has a
+  specialisation for each file in `base16/`, built with the system: ten
+  add some seconds to a rebuild's evaluation and a few MB to the store. The
+  configuration is linked at `/etc/jupiter/home`, and `apply.sh` runs
+  `specialisation/<theme>/activate` under it once it has rendered the
+  templates (well under a second), or the plain generation, the default
+  theme's, for a theme without a file. At boot home-manager activates the
+  plain one; the shell's `apply.sh` at login switches back.
+- **What Stylix owns.** btop's and mpv's configs become links into the store,
+  so their settings are declared in `theme.nix`, not saved from the apps;
+  Zed keeps writing its `settings.json`, which home-manager merges into. A
+  config one of them wrote before is kept as `<file>.before-stylix`. The
+  packages stay `packages.nix`'s (`package = null`).
+- **System-wide, one theme.** The console and fontconfig take the default
+  theme (Oxocarbon-Dark, `apply.sh`'s): a specialisation of the system
+  would be a boot entry, and switching it needs root.
+- **Adding a theme** to pre-build: `scripts/base16-schemes.py <theme>` in the
+  dotfiles, commit, and rebuild once the flake's `dotfiles` input has it.
+- **Not themed:** the boot menu. lanzaboote's signed systemd-boot, which the
+  TPM binding relies on, has no colours or background to set, and with
+  `boot.loader.timeout = 0` it is not shown. Plymouth stays off, which keeps
+  the passphrase prompt on the console.
 
 ## Packages nixpkgs has differently, or not
 

@@ -22,6 +22,17 @@
       url = "github:nix-community/lanzaboote/v1.2.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # The apps the dotfiles' templates do not reach, in the theme apply.sh
+    # applies: Stylix's targets (nixos/theme.nix), in home-manager for the
+    # user's, with one specialisation per pre-built theme.
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    stylix = {
+      url = "github:nix-community/stylix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     # What the dotfiles install as root (the login screen's PAM stack and its
     # root copy, udev rules, the user units' drop-ins), from this revision.
     # The home's clone, which phase 4 links into ~/.config, is separate.
@@ -36,6 +47,8 @@
       self,
       nixpkgs,
       lanzaboote,
+      home-manager,
+      stylix,
       dotfiles,
     }:
     let
@@ -46,6 +59,8 @@
         lib.nixosSystem {
           modules = [
             lanzaboote.nixosModules.lanzaboote
+            home-manager.nixosModules.home-manager
+            stylix.nixosModules.stylix
             self.nixosModules.default
             ./hosts/${name}/hardware-configuration.nix
             {
