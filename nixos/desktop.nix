@@ -66,7 +66,8 @@ in
     brightnessctl
     libnotify
     # secret-tool keeps the calendar's password; qalc is the launcher's
-    # calculator; qtimageformats lets the shell show .webp wallpapers.
+    # calculator; qtimageformats lets the shell show .webp wallpapers
+    # (found through qt.enable, below).
     libsecret
     libqalculate
     kdePackages.qtimageformats
@@ -111,6 +112,15 @@ in
     zsh-history-substring-search
     zsh-syntax-highlighting
   ];
+
+  # Qt finds plugins on QT_PLUGIN_PATH, which on NixOS nothing sets but this:
+  # without it Quickshell sees only its own (no .webp wallpaper, in the
+  # shell or the greeter), and Qt apps neither qt6ct nor Kvantum. The theme
+  # itself stays the dotfiles' choice (QT_QPA_PLATFORMTHEME in uwsm/env).
+  qt.enable = true;
+  # Electron and Chromium apps (Obsidian, Vesktop, Brave, …) on Wayland
+  # rather than XWayland, as the NixOS wiki's Hyprland page sets them.
+  environment.sessionVariables.NIXOS_OZONE_WL = "1";
 
   fonts.packages = with pkgs; [
     nerd-fonts.jetbrains-mono

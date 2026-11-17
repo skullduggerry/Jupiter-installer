@@ -32,11 +32,12 @@ from_nixpkgs() {
     nix --extra-experimental-features 'nix-command flakes' \
         shell "nixpkgs#$1" --command "$@"
 }
+# type -P finds programs alone: command -v would find these functions.
 git() {
-    if command -v git >/dev/null; then command git "$@"; else from_nixpkgs git "$@"; fi
+    if type -P git >/dev/null; then command git "$@"; else from_nixpkgs git "$@"; fi
 }
 python3() {
-    if command -v python3 >/dev/null; then command python3 "$@"; else from_nixpkgs python3 "$@"; fi
+    if type -P python3 >/dev/null; then command python3 "$@"; else from_nixpkgs python3 "$@"; fi
 }
 
 if [[ -d $dir/.git ]]; then

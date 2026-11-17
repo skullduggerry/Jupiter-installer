@@ -7,9 +7,9 @@ let
   # The private ranges, IPv6's link-local among them: the phone finds the
   # computer by broadcast and the two connect directly, so KDE Connect works
   # on any local network and is never reachable from the internet.
-  local4 = "10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16";
+  local4 = "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16";
   local6 = "fe80::/10";
-  kdeconnect = "1714-1764";
+  kdeconnect = "1714:1764";
 in
 {
   environment.systemPackages = with pkgs; [
@@ -57,12 +57,17 @@ in
 
   # NixOS's firewall is on, where Arch's ufw is installed but off: KDE
   # Connect gets its ports from the local networks alone, rather than
-  # programs.kdeconnect's, which opens them to every network.
-  networking.nftables.enable = true;
-  networking.firewall.extraInputRules = ''
-    ip saddr { ${local4} } tcp dport ${kdeconnect} accept
-    ip saddr { ${local4} } udp dport ${kdeconnect} accept
-    ip6 saddr ${local6} tcp dport ${kdeconnect} accept
-    ip6 saddr ${local6} udp dport ${kdeconnect} accept
+  # programs.kdeconnect's, which opens them to every network. It stays on
+  # iptables, NixOS's default: Docker writes iptables rules of its own,
+  # which nftables' NixOS module says does not work beside it without
+  # intervention. nixos-fw is emptied at each start, so these are not
+  # added twice; the firewall's own refuse rule comes after them.
+  networking.firewall.extraCommands = ''
+    for proto in tcp udp; do
+      for net in ${local4}; do
+        iptables -A nixos-fw -p "$proto" -s "$net" --dport ${kdeconnect} -j nixos-fw-accept
+      done
+      ip6tables -A nixos-fw -p "$proto" -s ${local6} --dport ${kdeconnect} -j nixos-fw-accept
+    done
   '';
 }

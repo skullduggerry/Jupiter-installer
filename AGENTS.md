@@ -1,6 +1,6 @@
 # Jupiter-installer: agent guide
 
-Installs Arch Linux or NixOS with Hyprland, Quickshell and Jupiter-dotfiles, in four phases written in Python with nothing beyond its standard library. It runs as root from a live ISO and erases disks: a mistake here costs someone their data or a machine that does not boot. [README.md](README.md) says what each phase does for a user; [docs/nixos.md](docs/nixos.md) how the NixOS side maps onto Arch's, and its known issues.
+Installs Arch Linux or NixOS with Hyprland, Quickshell and Jupiter-dotfiles, in four phases written in Python with nothing beyond its standard library. It runs as root from a live ISO and erases disks: a mistake here costs someone their data or a machine that does not boot. [README.md](README.md) says what each phase does for a user; [docs/nixos.md](docs/nixos.md) how the NixOS side maps onto Arch's.
 
 ## Git
 
@@ -24,7 +24,7 @@ Commit and push straight to `main`, here and in Jupiter-dotfiles and Jupiter-tes
 | `jupiter/secureboot.py`, `tpm.py`, `keyring.py` | Secure Boot keys, the TPM binding (phase 4's last step), the login keyring |
 | `jupiter/config.py` | where the dotfiles come from (fork here) |
 | `jupiter/nixos/` | NixOS's phases: `phase1.py` (disks by Arch's code, then `hosts/<name>/` and `nixos-install`), `system.py` (phases 2 and 3: one `nixos-rebuild switch`), `dotfiles.py` (phase 4 by Arch's steps, less what the flake declares), `tpm.py`, `common.py` (a host's `settings.json`) |
-| `flake.nix`, `nixos/` | the NixOS system: `default.nix` declares `jupiter.settings` (the schema phase 1 writes) and imports `base`, `desktop`, `packages`, `login` (greetd and PAM), `secureboot` (lanzaboote) |
+| `flake.nix`, `flake.lock`, `nixos/` | the NixOS system: `default.nix` declares `jupiter.settings` (the schema phase 1 writes) and imports `base`, `desktop`, `packages`, `login` (greetd and PAM), `secureboot` (lanzaboote) |
 | `hosts/<name>/` | one machine: `settings.json` (phase 1's answers) and `hardware-configuration.nix`; `hosts/example/` is what tests and CI evaluate |
 | `packages/*.txt` | Arch's package lists: `core.txt` (phase 2), `pacman.txt`, `aur.txt` (phase 3) |
 | `docs/` | for people: NixOS, and encrypting an existing install |
@@ -48,7 +48,7 @@ Tests live in `../Jupiter-testing` (`installer/`, `installer/security/`); see it
 
 - `bootstrap.sh` runs from a pipe: its answers come from `/dev/tty`, not stdin.
 - A flake in a git repo sees tracked files only: phase 1 `git add`s `hosts/<name>/`; anything new the flake reads must be tracked too.
-- Nix writes and stages a `flake.lock` in the user's copy on the first build when the repo has none (docs/nixos.md, "Known issues").
+- `flake.lock` is what a machine builds: change an input in `flake.nix` and commit the lock `nix flake lock` writes with it. `.github/workflows/update-flake-lock.yml` moves it weekly, after CI's NixOS checks pass on the new one.
 - On NixOS, phases 2 to 4 refuse root (nixos-rebuild builds as the user and asks sudo for the switch); on Arch, 3 and 4 do.
 - `distro.OS_RELEASE` reads `JUPITER_OS_RELEASE` when set: the tests' way to run either system's phases anywhere.
 

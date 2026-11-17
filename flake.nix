@@ -16,7 +16,8 @@
     # Secure Boot: a signed systemd-boot and signed kernel images, with keys
     # of the system's own (sbctl's, in /var/lib/sbctl).
     lanzaboote = {
-      url = "github:nix-community/lanzaboote";
+      # A release, as lanzaboote's guide pins one.
+      url = "github:nix-community/lanzaboote/v1.2.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # What the dotfiles install as root (the login screen's PAM stack and its

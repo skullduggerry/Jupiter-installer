@@ -1,0 +1,67 @@
+# Keeps flake.lock current. The lock names the exact revision of each of
+# the flake's inputs (nixpkgs' nixos-unstable, lanzaboote's release, the
+# dotfiles' root files), so every machine and CI build the same system; a
+# machine's rebuild moves only when the lock here does, which its
+# `bootstrap.sh` pulls. Weekly, and on demand: the inputs are updated, then
+# Jupiter-testing's scripts/nixos-check.sh (CI's NixOS job) runs on the new
+# lock, and only if it passes is the lock committed to the branch this runs
+# on, and check.yml started on that commit for the rest of the checks.
+name: Update flake.lock
+
+on:
+  schedule:
+    - cron: "41 2 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: update-flake-lock-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # to push the lock
+  actions: write # to start check.yml on it
+
+env:
+  BRANCH: ${{ github.ref_name }}
+
+jobs:
+  update:
+    name: Update, check, commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: checkout
+      - uses: cachix/install-nix-action@v31
+      - name: Lay out the repos
+        run: |
+          export GIT_TERMINAL_PROMPT=0
+          url=https://github.com/skullduggerry/Jupiter-testing.git
+          git clone --quiet --depth 1 --branch "$BRANCH" "$url" Jupiter-testing 2>/dev/null ||
+            git clone --quiet --depth 1 "$url" Jupiter-testing
+          bash Jupiter-testing/scripts/ci-repos.sh checkout "$BRANCH"
+      - name: Update the inputs
+        working-directory: Jupiter-installer
+        run: |
+          nix flake update
+          git diff --stat -- flake.lock
+      - name: Check the system on the new lock
+        run: bash Jupiter-testing/scripts/nixos-check.sh
+      - name: Commit and push it, then check.yml
+        working-directory: Jupiter-installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git add flake.lock
+          if git diff --cached --quiet; then
+            echo "flake.lock is current"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -m "Update flake.lock" \
+            -m "$(nix flake metadata --json | jq -r '.locks.nodes | to_entries[]
+              | select(.key != "root") | "\(.key): \(.value.locked.rev[0:12])"')"
+          git push origin "HEAD:$BRANCH"
+          # A push with this token starts no workflow; a dispatch does.
+          gh workflow run check.yml --ref "$BRANCH"

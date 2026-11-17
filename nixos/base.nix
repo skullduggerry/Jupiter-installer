@@ -34,6 +34,18 @@ in
     "nix-command"
     "flakes"
   ];
+  # Each generation keeps its packages in the store and, encrypted, a signed
+  # image of 50-100 MiB on the 1 GiB ESP: without bounds a rebuild fails
+  # once either is full. Ten boot entries (lanzaboote's limit follows
+  # systemd-boot's), generations older than a month collected weekly, and
+  # identical files in the store linked into one.
+  boot.loader.systemd-boot.configurationLimit = 10;
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 30d";
+  };
+  nix.optimise.automatic = true;
 
   # The initrd is systemd's, as Arch's systemd and sd-encrypt hooks make it:
   # it opens the root from crypttab's line and asks for the passphrase in the
@@ -125,6 +137,9 @@ in
   # anything in the configuration lands in the world-readable store.
   users.mutableUsers = true;
   programs.zsh.enable = true;
+  # .zshrc runs compinit itself, after its own fpath: a second, global one
+  # only slows every shell's start.
+  programs.zsh.enableGlobalCompInit = false;
   users.users.${settings.user} = {
     isNormalUser = true;
     extraGroups = [ "wheel" ];

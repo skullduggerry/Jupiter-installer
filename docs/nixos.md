@@ -146,8 +146,25 @@ the system declares), and where a path is fixed in QML or CSS,
   Arch phase 4's `max-tries=3 timeout=10`. Without a reader pam_fprintd
   returns at once, so no reader check is needed.
 - **Firewall.** NixOS's is on; Arch's ufw is installed but off. KDE
-  Connect's ports are opened to the private ranges only (nftables), where
-  `programs.kdeconnect` would open them to every network.
+  Connect's ports are opened to the private ranges only, where
+  `programs.kdeconnect` would open them to every network. It stays on
+  iptables, NixOS's default: Docker writes iptables rules of its own, which
+  nftables' NixOS module says do not work beside it without intervention.
+- **Updates come with the repo.** `flake.lock` names the exact revision of
+  each input (nixpkgs' nixos-unstable, lanzaboote's release, the dotfiles'
+  root files), so every machine and CI build the same system. A machine
+  moves when its copy pulls a newer lock: `bootstrap.sh 2` pulls, then
+  rebuilds. `.github/workflows/update-flake-lock.yml` updates the lock
+  weekly (or on demand), runs CI's NixOS checks on it, and only then
+  commits it. A fork updates its own the same way, or with `nix flake
+  update` and a commit.
+- **Bounded growth.** Ten boot entries (lanzaboote's limit follows
+  systemd-boot's), generations older than a month collected weekly, the
+  store deduplicated: a signed image per generation would otherwise fill
+  the 1 GiB ESP.
+- **Qt's plugins.** `qt.enable` sets `QT_PLUGIN_PATH`, without which
+  Quickshell finds no .webp support and Qt apps neither qt6ct nor Kvantum;
+  the theme stays the dotfiles' (`QT_QPA_PLATFORMTHEME` in `uwsm/env`).
 - **The TPM's crypttab options** are declared, not edited: phase 4 writes
   `tpm` and `volumeKey` into the machine's settings and rebuilds, and
   `base.nix` adds `tpm2-device=auto` and `fixate-volume-key=` to the
@@ -221,52 +238,17 @@ What works and how it is checked:
   stand-in commands, phases 2 to 4, the TPM step, `desktop-entries.py`,
   detection, the settings schema, and the generated PAM stacks.
 - **Not yet done** — the roadmap, roughly in order:
-  1. `flake.lock`: commit one (see "Known issues").
-  2. Install in a VM end to end. Jupiter-testing's `vm/` rig boots the Arch
+  1. Install in a VM end to end. Jupiter-testing's `vm/` rig boots the Arch
      ISO; it needs the NixOS ISO's kernel and console, and phase 1's answers.
      NixOS's own test driver (`nixosTest`) could cover phases 2 to 4 and
      log in at the greeter.
-  3. Check on hardware that lanzaboote's stub sets `StubInfo`, which
+  2. Check on hardware that lanzaboote's stub sets `StubInfo`, which
      `jupiter/tpm.py` reads to tell that a signed image started this boot.
-  4. Find the rest of what the `/usr/share` links stand in for without them:
+  3. Find the rest of what the `/usr/share` links stand in for without them:
      the greeter's sessions, the keyboard page's layouts and the GTK
      theme's import are fixed paths in Python, QML and CSS.
-  5. Merge the dotfiles' branch to their `main` with this one: until then
+  4. Merge the dotfiles' branch to their `main` with this one: until then
      the lock screen's finger fails on NixOS (the password works).
-
-## Known issues
-
-Found in review against the NixOS manual, the nixpkgs option docs and
-lanzaboote's README; each waits for a decision, and each but the last two
-is an expected failure in Jupiter-testing (`installer/test_bootstrap.py`,
-`installer/test_nixos_flake.py`), which passes once it is fixed.
-
-- **bootstrap.sh on the NixOS ISO.** Its `git()` and `python3()` look for
-  the real program with `command -v`, which finds the function itself, so
-  on an ISO without git the curl line fails. `type -P` finds programs only.
-- **No flake.lock.** The first build writes one into the machine's copy and
-  stages it: that machine's nixpkgs never moves again, so running phases 2
-  and 3 updates nothing, and once a lock is committed here,
-  `bootstrap.sh`'s `git pull --ff-only` aborts on the local one. Committing
-  a lock (and bumping it with `nix flake update`, e.g. on a schedule in CI)
-  makes updates arrive with the repo.
-- **Qt plugins.** Nothing sets `QT_PLUGIN_PATH`, so Quickshell (shell and
-  greeter) finds only its own image plugins, not .webp, and Qt apps find
-  neither qt6ct nor Kvantum. `qt.enable = true` (with `platformTheme`) adds
-  the profile's plugin folders.
-- **Docker beside nftables.** `networking.nftables.enable`'s documentation
-  warns that Docker does not work with it without intervention: Docker
-  keeps writing iptables rules. Either the firewall stays on iptables, or
-  Docker is set to its nftables backend.
-- **The ESP and the store fill up.** Neither the number of boot entries
-  (lanzaboote's `configurationLimit`) nor garbage collection
-  (`nix.gc.automatic`) is bounded; a signed image per generation fills a
-  1 GiB ESP, and then a rebuild fails.
-- **lanzaboote unpinned.** Its README pins a release tag; `flake.nix`
-  follows its default branch.
-- Smaller: `NIXOS_OZONE_WL=1` for Electron apps under Wayland (NixOS
-  wiki's Hyprland page); zsh runs `compinit` twice (`programs.zsh`'s and
-  the dotfiles' `.zshrc`).
 
 ## Developing
 
