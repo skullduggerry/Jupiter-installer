@@ -1,1 +1,1 @@
-"""Installer for Arch Linux with Hyprland and the Jupiter dotfiles."""
+"""Installer for Arch Linux or NixOS with Hyprland and the Jupiter dotfiles."""

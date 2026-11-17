@@ -61,4 +61,5 @@ Each Jupiter repo has this `check.sh`, with the same arguments, and `bootstrap.s
 - [Installer troubleshooting](https://github.com/skullduggerry/Jupiter-dotfiles/wiki/Installer-troubleshooting): every message the installer prints, what it means and what to do.
 - [Disk encryption](https://github.com/skullduggerry/Jupiter-dotfiles/wiki/Disk-encryption): how the encrypted disk, Secure Boot, the TPM and the fingerprint fit together, and a checklist for real hardware with the way back from each step.
 - [Encrypting an existing install](docs/encrypt-an-existing-install.md): a system phase 1 installed before it encrypted, encrypted in place from the live ISO.
-- [Jupiter on NixOS](docs/nixos.md): how the NixOS side maps onto Arch's phases, what NixOS made different, its packages, and what is not yet tried on hardware.
+- [Jupiter on NixOS](docs/nixos.md): how the NixOS side maps onto Arch's phases, what NixOS made different, its packages, its known issues, and what is not yet tried on hardware.
+- [AGENTS.md](AGENTS.md): the map and the rules of the code, for coding agents (Claude Code reads it through `CLAUDE.md`).

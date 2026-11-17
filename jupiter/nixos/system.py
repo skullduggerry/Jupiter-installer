@@ -5,8 +5,9 @@ your packages), and much of what its phase 4 sets up as root, the flake
 declares (nixos/); both phases build this machine's configuration
 (hosts/<hostname>/) and switch to it, once a run however many of the two
 it names. Run it again after changing nixos/ or the settings, and after an
-update of this repo, whose flake.lock pins nixpkgs and the dotfiles' root
-files. nixos-rebuild evaluates and builds as you, and asks sudo for the
+update of this repo. The flake's inputs (nixpkgs, lanzaboote, the dotfiles'
+root files) are those of the flake.lock beside it: docs/nixos.md, "Known
+issues", says why that is not yet committed and what follows. nixos-rebuild evaluates and builds as you, and asks sudo for the
 switch alone: as root, git refuses a clone in your home, which is yours.
 """
 
