@@ -1,4 +1,5 @@
-"""Phase 3: your own packages, from packages/pacman.txt and packages/aur.txt.
+"""Phase 3 on Arch: your own packages, from arch/packages/pacman.txt and
+arch/packages/aur.txt.
 
 AUR packages are installed with paru, which is built first if missing,
 once you have read its PKGBUILD. paru then shows each package's PKGBUILD
@@ -15,16 +16,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .common import (
-    install,
-    log,
-    output,
-    packages,
-    run,
-    skip,
-    skipped,
-    succeeds,
-)
+from ..common import log, output, run, succeeds
+from .common import install, packages, skip, skipped
 
 PARU = "https://aur.archlinux.org/paru.git"
 PACMAN_CONF = Path("/etc/pacman.conf")

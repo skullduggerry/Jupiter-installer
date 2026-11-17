@@ -1,15 +1,14 @@
-"""Phase 4: the dotfiles.
+"""Phase 4 on Arch: the dotfiles.
 
-Clones them into your home, links every folder of their .config/ into
-~/.config/ and .config/.zshrc to ~/.zshrc, then sets up what they expect
-around them: the shell's notification server, the first theme, their udev
+The dotfiles cloned, linked into place, the shell kept as the notification
+server and the first theme rendered, as on NixOS (dotfiles.py). Then what
+Arch has no configuration to declare, installed as root here: their udev
 rules and pacman hooks, the login screen, on an encrypted system an
 unencrypted login keyring (keyring.py), a fingerprint where there is a
-reader, and zsh. Whatever a link would replace is moved to
-~/.dotfiles-backup/<time>/. Last, on an encrypted system, the TPM is bound
-to unlock the disk at boot, or what is still missing for it is said
-(tpm.py). Safe to run again, and run again after a firmware update that
-asked for the passphrase at boot.
+reader, and zsh. Last, on an encrypted system, the TPM is bound to unlock
+the disk at boot, or what is still missing for it is said (tpm.py). Safe to
+run again, and run again after a firmware update that asked for the
+passphrase at boot.
 """
 
 import os
@@ -17,17 +16,12 @@ import pwd
 import shutil
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
-from . import keyring, tpm
-from .common import log, run, succeeds, warn
-from .config import DOTFILES_PUSH_URL, DOTFILES_REPO
+from .. import dotfiles, keyring, tpm
+from ..common import log, run, succeeds, warn
 
-HOME = Path.home()
-CONFIG = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config")
 ZSH = Path("/usr/bin/zsh")
-NOTIFICATION_DAEMONS = ["dunst.service", "mako.service", "swaync.service"]
 SUDO_PAM = Path("/etc/pam.d/sudo")
 # polkit's own stack is /usr/lib/pam.d/polkit-1, which one in /etc replaces.
 POLKIT_PAM = Path("/etc/pam.d/polkit-1")
@@ -42,79 +36,13 @@ OLD_FINGERPRINT = "auth       sufficient   pam_fprintd.so\n"
 
 def main() -> None:
     """Fetch the dotfiles, link them into place and set up around them."""
-    repo = HOME / Path(DOTFILES_REPO).stem
-    _fetch(repo)
-    _link_all(repo)
-    # A daemon D-Bus starts on demand would take the shell's notifications.
-    run("systemctl", "--user", "mask", *NOTIFICATION_DAEMONS)
-    _render_theme(repo)
+    repo = dotfiles.set_up()
     _install_system(repo)
     _install_greeter(repo)
     keyring.main()
     _fingerprint()
     _use_zsh()
     tpm.main()
-
-
-def _fetch(repo: Path) -> None:
-    if (repo / ".git").is_dir():
-        # Offline, or a clone with commits its origin lacks: the rest of the
-        # phase sets up the clone that is there.
-        if not succeeds("git", "-C", repo, "pull", "--ff-only"):
-            warn(f"Could not update {repo}: setting it up as it is")
-    else:
-        run("git", "clone", DOTFILES_REPO, repo)
-    if DOTFILES_PUSH_URL:
-        push = ["remote", "set-url", "--push", "origin", DOTFILES_PUSH_URL]
-        run("git", "-C", repo, *push)
-
-
-def _link_all(repo: Path) -> None:
-    backup = HOME / ".dotfiles-backup" / time.strftime("%Y%m%d-%H%M%S")
-    links = {
-        CONFIG / entry.name: entry
-        for entry in (repo / ".config").iterdir()
-        if not entry.name.startswith(".")
-    }
-    if (zshrc := repo / ".config/.zshrc").exists():
-        links[HOME / ".zshrc"] = zshrc
-    for target, source in links.items():
-        _link(source, target, backup)
-    for target in CONFIG.iterdir():
-        if (
-            target.is_symlink()
-            and not target.exists()
-            and target.readlink().is_relative_to(repo)
-        ):
-            target.unlink()
-            log(f"Removed {target}, the dotfiles no longer have its folder")
-
-
-def _link(source: Path, target: Path, backup: Path) -> None:
-    if target.is_symlink() and target.readlink() == source:
-        return
-    if target.exists() or target.is_symlink():
-        # Under the backup as under the home; by its whole path where
-        # XDG_CONFIG_HOME is outside it.
-        base = HOME if target.is_relative_to(HOME) else Path(target.anchor)
-        moved = backup / target.relative_to(base)
-        moved.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(target, moved)
-        log(f"Moved {target} to {moved}")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.symlink_to(source)
-    log(f"Linked {target}")
-
-
-def _render_theme(repo: Path) -> None:
-    """Render the colour files now, rather than at the first login."""
-    if shutil.which("wallust"):
-        run(repo / ".config/wallust/apply.sh")
-    else:
-        warn(
-            "wallust is missing: the first login after installing it "
-            "renders the theme"
-        )
 
 
 def _install_system(repo: Path) -> None:

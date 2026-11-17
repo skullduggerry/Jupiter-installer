@@ -1,5 +1,5 @@
 # The desktop the dotfiles need: the Arch installer's phase 2
-# (packages/core.txt and the services it enables), declared. Each group
+# (arch/packages/core.txt and the services it enables), declared. Each group
 # says why, as core.txt did; what NixOS does differently is in docs/nixos.md.
 {
   config,

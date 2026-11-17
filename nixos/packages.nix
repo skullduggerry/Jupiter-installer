@@ -1,4 +1,4 @@
-# Your own packages: the Arch installer's phase 3 (packages/pacman.txt and
+# Your own packages: the Arch installer's phase 3 (arch/packages/pacman.txt and
 # aur.txt), declared. Fork the repo and change this list; the rest of
 # nixos/ merges cleanly from upstream. Where nixpkgs has no package for one
 # the Arch lists name, docs/nixos.md says so.

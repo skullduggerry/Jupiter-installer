@@ -1,8 +1,10 @@
 """Run the installer: python3 -m jupiter [phase ...].
 
 The same four phases on Arch and on NixOS, told apart by jupiter/distro.py:
-on Arch they are jupiter/phase1.py to phase4.py, on NixOS jupiter/nixos/,
-where phases 2 and 3 are one rebuild of the system the flake declares.
+on Arch they are jupiter/arch/, on NixOS jupiter/nixos/, where phases 2 and 3
+are one rebuild of the system the flake declares. What both do the same is
+in the modules beside this one (questions, disks, dotfiles, keyring, tpm,
+secureboot).
 """
 
 import argparse
@@ -12,11 +14,12 @@ import shutil
 import subprocess
 import sys
 
-from . import phase1, phase2, phase3, phase4
-from .common import INSTALLER_DIR, LIVE, log, skipped, succeeds, warn
+from .arch import phase1, phase2, phase3, phase4
+from .arch.common import skipped
+from .common import INSTALLER_DIR, LIVE, log, succeeds, warn
 from .distro import detect
-from .nixos import dotfiles as nixos_dotfiles
 from .nixos import phase1 as nixos_phase1
+from .nixos import phase4 as nixos_phase4
 from .nixos import system as nixos_system
 
 PHASES = {1: phase1.main, 2: phase2.main, 3: phase3.main, 4: phase4.main}
@@ -24,7 +27,7 @@ NIXOS_PHASES = {
     1: nixos_phase1.main,
     2: nixos_system.main,
     3: nixos_system.main,
-    4: nixos_dotfiles.main,
+    4: nixos_phase4.main,
 }
 ISO = {
     "arch": "the Arch Linux live ISO",

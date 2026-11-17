@@ -1,11 +1,14 @@
-"""What the phases share: running commands, logging and package lists."""
+"""What every phase, on either system, uses: running commands and logging."""
 
 import subprocess
 from pathlib import Path
 
 INSTALLER_DIR = Path(__file__).resolve().parent.parent
-LIVE = Path("/run/archiso").is_dir()
-skipped: list[str] = []  # packages that failed to install, for the summary
+LIVE = Path("/run/archiso").is_dir()  # the Arch ISO (distro.py tells NixOS's)
+# NVIDIA's first GPU nvidia-open drives, by PCI device ID: older ones keep
+# nouveau, on Arch (jupiter/arch/phase1.py) and NixOS
+# (jupiter/nixos/phase1.py) alike.
+NVIDIA_TURING = 0x1E00
 
 
 def log(message: str) -> None:
@@ -35,30 +38,3 @@ def output(*command: str | Path) -> str:
     return subprocess.run(
         command, capture_output=True, text=True, check=True
     ).stdout
-
-
-def packages(name: str) -> list[str]:
-    """Read packages/<name>: one package per line, `#` starts a comment."""
-    lines = (INSTALLER_DIR / "packages" / name).read_text().splitlines()
-    return [word for line in lines if (word := line.split("#", 1)[0].strip())]
-
-
-def install(command: list[str], names: list[str]) -> None:
-    """Install packages with command, skipping those that fail.
-
-    A broken package fails the whole transaction, so when installing them
-    together fails, each is tried on its own.
-    """
-    if not names or succeeds(*command, *names):
-        return
-    broken = names
-    if len(names) > 1:
-        broken = [name for name in names if not succeeds(*command, name)]
-    skip(broken)
-
-
-def skip(names: list[str]) -> None:
-    """Leave packages out, saying so now and in the summary."""
-    if names:
-        warn(f"Failed to install, skipping: {' '.join(names)}")
-        skipped.extend(names)

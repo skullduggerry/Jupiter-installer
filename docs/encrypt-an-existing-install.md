@@ -1,4 +1,4 @@
-# Encrypting an existing install
+# Encrypting an existing install (Arch)
 
 Phase 1 encrypts a new install. A system phase 1 installed before it did
 (Btrfs straight on its partition, a loader entry with a separate initramfs)

@@ -1,4 +1,5 @@
-"""Phase 2: the desktop's core packages and services.
+"""Phase 2 on Arch: the desktop's core packages (arch/packages/core.txt)
+and services.
 
 From the live ISO this installs into the system phase 1 left at /mnt, on
 an installed system it goes through sudo.
@@ -7,7 +8,8 @@ an installed system it goes through sudo.
 import os
 from pathlib import Path
 
-from .common import LIVE, install, output, packages, run, skipped
+from ..common import LIVE, output, run
+from .common import install, packages, skipped
 
 SERVICES = {  # package: its service
     "networkmanager": "NetworkManager",
@@ -72,7 +74,7 @@ def encrypted() -> bool:
 
 
 def main() -> None:
-    """Install packages/core.txt and enable the services it needs."""
+    """Install arch/packages/core.txt and enable the services it needs."""
     if LIVE and not Path("/mnt").is_mount():
         raise SystemExit("Run phase 1 first, or mount the new system at /mnt.")
     target = ["arch-chroot", "-S", "/mnt"] if LIVE else ["sudo"]

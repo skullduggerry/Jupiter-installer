@@ -1,7 +1,7 @@
 """Phase 4 on NixOS: the dotfiles, as Arch's phase 4 sets them up.
 
 Cloned into your home and linked into place, the shell's notification server
-kept, the first theme rendered: Arch's own steps (jupiter/phase4.py). Then
+kept, the first theme rendered, as on Arch (jupiter/dotfiles.py). Then
 what a configuration cannot do: the login screen's copy of your theme and
 wallpaper (root's install-greeter.sh, as the Settings app runs it), a
 fingerprint enrolled where there is a reader, on an encrypted system an
@@ -21,9 +21,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .. import keyring, phase4
+from .. import dotfiles, keyring
 from ..common import run, succeeds, warn
-from ..config import DOTFILES_REPO
 from . import tpm
 
 # Root's copy of the login screen's installer (nixos/login.nix links it).
@@ -34,12 +33,7 @@ INSTALL_GREETER = Path(
 
 def main() -> None:
     """Fetch the dotfiles, link them into place and set up around them."""
-    repo = phase4.HOME / Path(DOTFILES_REPO).stem
-    phase4._fetch(repo)
-    phase4._link_all(repo)
-    # A daemon D-Bus starts on demand would take the shell's notifications.
-    run("systemctl", "--user", "mask", *phase4.NOTIFICATION_DAEMONS)
-    phase4._render_theme(repo)
+    repo = dotfiles.set_up()
     _install_greeter(repo)
     keyring.main()
     _enroll_finger()

@@ -13,17 +13,18 @@ The Arch side is imperative: four Python phases run pacman, paru,
 `arch-chroot` and `sudo` in order. On NixOS the system is a function of its
 configuration, so everything that phase 2, phase 3 and the root half of
 phase 4 do with packages and files is a NixOS module in `nixos/`, and what
-remains imperative stays in Python, in `jupiter/nixos/`, built on the Arch
-side's own code where the work is the same:
+remains imperative stays in Python, in `jupiter/nixos/`, built on the code
+both systems share (the modules at the top of `jupiter/`) where the work is
+the same, as `jupiter/arch/` is:
 
 | | On Arch | On NixOS |
 |---|---|---|
-| Disks, LUKS, Btrfs, data disks | phase 1 (`jupiter/phase1.py`) | phase 1, the same functions |
+| Questions, disks, LUKS, data disks | phase 1 (`jupiter/questions.py`, `disks.py`) | phase 1, the same modules |
 | Base system, boot, user, drivers | phase 1 (pacstrap, mkinitcpio, sbctl) | `nixos/base.nix`, `secureboot.nix`; phase 1 runs `nixos-install` |
-| Desktop packages and services | phase 2 (`packages/core.txt`) | `nixos/desktop.nix`, built by phases 2 and 3 |
+| Desktop packages and services | phase 2 (`arch/packages/core.txt`) | `nixos/desktop.nix`, built by phases 2 and 3 |
 | Your packages | phase 3 (`pacman.txt`, `aur.txt`) | `nixos/packages.nix`, the same build |
 | Root files of the dotfiles, greetd, PAM, finger in sudo/polkit, zsh | phase 4 (`install-system.sh`, `install-greeter.sh`, `/etc/pam.d` edits, `chsh`) | `nixos/login.nix`, `base.nix` |
-| Dotfiles linked into the home, theme, keyring, fingerprint, TPM | phase 4 | phase 4: Arch's linking, keyring and TPM binding, with `jupiter/nixos/dotfiles.py` and `tpm.py` for the rest |
+| Dotfiles linked into the home, theme, keyring, fingerprint, TPM | phase 4 | phase 4: the same linking (`jupiter/dotfiles.py`), keyring and TPM binding, with `jupiter/nixos/phase4.py` and `tpm.py` for the rest |
 | Updating | `bootstrap.sh 2 3 4` (pacman -Syu, paru) | `bootstrap.sh 2 4` (git pull, `nixos-rebuild switch`) |
 
 The phases on NixOS:
@@ -55,7 +56,7 @@ nixos/login.nix           greetd, its PAM stacks, root's greeter copy, udev, dro
 nixos/theme.nix           Stylix and home-manager: the console, fonts, btop, mpv, Zed; a specialisation per theme
 nixos/desktop-entries.py  the dotfiles' uwsm-desktop-entries.py, run as the profile is built
 hosts/<name>/             settings.json + hardware-configuration.nix, one per machine
-jupiter/nixos/            the NixOS phases, on the Arch side's code (jupiter/)
+jupiter/nixos/            the NixOS phases, on the code both systems share (jupiter/)
 jupiter/distro.py         which system this is
 ```
 

@@ -1,8 +1,9 @@
 """Phase 1 on NixOS: install NixOS from the installation ISO.
 
-The disk is laid out as on Arch, by Arch's own code (jupiter/phase1.py says
-how): GPT with a 1 GiB EFI system partition at /boot, Btrfs subvolumes for
-everything else (@nix where Arch has pacman's cache), on LUKS2 unless you
+The questions and the disks are the same as on Arch (jupiter/questions.py,
+jupiter/disks.py): GPT with a 1 GiB EFI system partition at /boot, Btrfs
+subvolumes for everything else (@nix where Arch has pacman's cache), on
+LUKS2 unless you
 decline it, and other empty disks as encrypted data disks if you choose
 them, each opened by a key file on the system. A disk you do not choose is
 never written to or opened.
@@ -26,9 +27,8 @@ import subprocess
 import uuid
 from pathlib import Path
 
-from .. import phase1 as disks
-from .. import secureboot
-from ..common import INSTALLER_DIR, output, run, succeeds, warn
+from .. import disks, questions, secureboot
+from ..common import INSTALLER_DIR, NVIDIA_TURING, output, run, succeeds, warn
 from ..distro import OS_RELEASE
 from .common import write_settings
 
@@ -59,8 +59,8 @@ def main() -> None:
     if disks.MNT.is_mount():
         run("umount", "--recursive", disks.MNT)
 
-    keymaps = disks._listed("localectl", "list-keymaps")
-    keymap = disks._ask("Keymap", "us", keymaps)
+    keymaps = questions.listed("localectl", "list-keymaps")
+    keymap = questions.ask("Keymap", "us", keymaps)
     # The console's own, for the passwords below: as typed at boot. Not a
     # console (over SSH, a serial line), characters arrive as they are.
     subprocess.run(["loadkeys", keymap], check=False, capture_output=True)
@@ -69,37 +69,35 @@ def main() -> None:
         print(secureboot.NO_SECURE_BOOT_HELP)
     elif firmware != "setup":
         print(secureboot.SETUP_MODE_HELP)
-    devices = disks._close_leftovers(disks._devices())
-    disk = disks._choose_disk(devices)
-    encrypt = disks._yes(f"Encrypt {disk}? [Y/n] ", default=True)
+    devices = disks.close_leftovers(disks.devices())
+    disk = disks.choose_disk(devices)
+    encrypt = questions.yes(f"Encrypt {disk}? [Y/n] ", default=True)
     passphrase = (
-        disks._new_password("the disk", "Passphrase") if encrypt else ""
+        questions.new_password("the disk", "Passphrase") if encrypt else ""
     )
-    data = disks._choose_data_disks(devices, disk) if encrypt else []
-    hostname = disks._ask("Hostname", "nixos", disks.HOSTNAME.fullmatch)
-    user = disks._ask("Username", "", disks._is_new_user)
+    data = disks.choose_data_disks(devices, disk) if encrypt else []
+    hostname = questions.ask("Hostname", "nixos", questions.HOSTNAME.fullmatch)
+    user = questions.ask("Username", "", questions.is_new_user)
     passwords = {
-        user: disks._new_password(user),
-        "root": disks._new_password("root"),
+        user: questions.new_password(user),
+        "root": questions.new_password("root"),
     }
-    zones = disks._listed("timedatectl", "list-timezones")
-    timezone = disks._ask("Time zone", "UTC", zones)
-    locale = disks._ask("Locale", "en_US.UTF-8", LOCALE.fullmatch)
-    if not disks._yes(f"Erase everything on {disk}? [y/N] ", default=False):
+    zones = questions.listed("timedatectl", "list-timezones")
+    timezone = questions.ask("Time zone", "UTC", zones)
+    locale = questions.ask("Locale", "en_US.UTF-8", LOCALE.fullmatch)
+    if not questions.yes(f"Erase everything on {disk}? [y/N] ", default=False):
         raise SystemExit("Nothing was changed.")
 
-    esp, root = disks._partition(disk)
+    esp, root = disks.partition(disk)
     luks = (
-        disks._encrypt(root, disks.ROOT_VOLUME, passphrase)
-        if encrypt
-        else None
+        disks.encrypt(root, disks.ROOT_VOLUME, passphrase) if encrypt else None
     )
     if luks:
         root = f"/dev/mapper/{disks.ROOT_VOLUME}"
     filesystem = _mount(esp, root)
     volumes = []
     for volume in data:
-        data_luks, data_filesystem = disks._make_data_disk(volume, passphrase)
+        data_luks, data_filesystem = disks.make_data_disk(volume, passphrase)
         volumes.append(
             {
                 "name": volume.name,
@@ -231,7 +229,7 @@ def gpus(root: Path = Path("/")) -> list[str]:
             continue
         vendor = (device / "vendor").read_text().strip()
         model = int((device / "device").read_text(), 16)
-        if vendor == "0x10de" and model >= disks.NVIDIA_TURING:
+        if vendor == "0x10de" and model >= NVIDIA_TURING:
             found.add("nvidia")
         elif vendor in GRAPHICS:
             found.add(GRAPHICS[vendor])
