@@ -1,7 +1,8 @@
 # Checks every push and pull request to the installer, on both systems it
 # installs, and nothing of the other Jupiter repos: Jupiter-dotfiles' own
-# check.yml checks the dotfiles, and Jupiter-testing, where the tests and
-# linters live, runs no checks of its own. The installer's suites read the
+# check.yml checks the dotfiles, and Jupiter-testing's, where the tests and
+# linters live, checks all three with its tools as pushed. The installer's
+# suites read the
 # dotfiles it installs, which come from main (or this branch, where the
 # dotfiles have it): a change there that breaks the installer shows here by
 # the next daily run. Daily on main as well, as Arch's packages move between
