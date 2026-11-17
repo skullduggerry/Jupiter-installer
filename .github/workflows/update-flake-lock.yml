@@ -4,9 +4,10 @@
 # machine's rebuild moves only when the lock here does, which its
 # `bootstrap.sh` pulls. Weekly, and on demand, every input is updated; on a
 # push that changes flake.nix, only what it changed is locked (nix flake
-# lock). Then Jupiter-testing's scripts/nixos-check.sh (CI's NixOS job) runs
-# on the new lock, and only if it passes is the lock committed to the
-# branch this runs on, and check.yml started on that commit for the rest.
+# lock). Then Jupiter-testing's scripts/nixos-check.sh, the installer's and
+# the dotfiles' NixOS checks both, runs on the new lock, and only if it
+# passes is the lock committed to the branch this runs on, and check.yml
+# started on that commit for the rest.
 name: Update flake.lock
 
 on:

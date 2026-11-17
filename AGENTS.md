@@ -4,7 +4,7 @@ Installs Arch Linux or NixOS with Hyprland, Quickshell and Jupiter-dotfiles, in 
 
 ## Git
 
-Commit and push straight to `main`, here and in Jupiter-dotfiles and Jupiter-testing: no branches or pull requests unless asked. CI (`.github/workflows/check.yml`, the same file in all three) checks every push on Arch and on NixOS.
+Commit and push straight to `main`, here and in Jupiter-dotfiles and Jupiter-testing: no branches or pull requests unless asked. CI (`.github/workflows/check.yml`) checks every push of this repo alone, on Arch and on NixOS; Jupiter-dotfiles' checks the dotfiles, and Jupiter-testing runs none.
 
 ## Sources of truth, in order
 
