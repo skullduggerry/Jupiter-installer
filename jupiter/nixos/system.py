@@ -7,8 +7,9 @@ declares (nixos/); both phases build this machine's configuration
 it names. Run it again after changing nixos/ or the settings, and after an
 update of this repo. The flake's inputs (nixpkgs, lanzaboote, the dotfiles'
 root files) are those of the flake.lock beside it: docs/nixos.md, "Known
-issues", says why that is not yet committed and what follows. nixos-rebuild evaluates and builds as you, and asks sudo for the
-switch alone: as root, git refuses a clone in your home, which is yours.
+issues", says why that is not yet committed and what follows.
+nixos-rebuild evaluates and builds as you, and asks sudo for the switch
+alone: as root, git refuses a clone in your home, which is yours.
 """
 
 from ..common import INSTALLER_DIR, log, run
