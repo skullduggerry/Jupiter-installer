@@ -4,9 +4,9 @@ Installs Arch Linux or NixOS with Hyprland, Quickshell and Jupiter-dotfiles, in 
 
 ## Git
 
-Commit and push straight to `main`, here and in Jupiter-dotfiles and Jupiter-testing: no branches or pull requests unless asked. CI (`.github/workflows/check.yml`, the same file in all three) checks every push on Arch and on NixOS.
+Commit and push straight to `main`, here and in Jupiter-dotfiles and Jupiter-testing: no branches or pull requests unless asked. CI (`.github/workflows/check.yml`) checks every push of this repo alone, on Arch and on NixOS; Jupiter-dotfiles' checks the dotfiles, and Jupiter-testing's all three with its tools as pushed.
 
-## Sources of truth, in order
+## References, in order of authority
 
 1. This repo: the docstring of every module you change (each says what its phase does and why), then this guide.
 2. The Arch Installation guide and ArchWiki for Arch; for NixOS the NixOS manual, the option documentation of the nixpkgs the flake follows (`man configuration.nix`, search.nixos.org for unstable), and lanzaboote's README.
@@ -18,21 +18,21 @@ Three parts: what both systems run, what only Arch runs, what only NixOS runs. A
 
 **Shared**
 
-| Path | What |
+| Path | Purpose |
 | --- | --- |
 | `bootstrap.sh`, `check.sh` | `curl … \| bash` entry: fetches or updates this repo, brings git and Python where either ISO lacks them, runs `python3 -m jupiter`; also forwards `check`, `lint`, `test` to `check.sh` |
 | `jupiter/__main__.py` | which phases run, by system (`distro.py`) and by whether this is the live ISO |
 | `jupiter/distro.py` | Arch or NixOS, ISO or installed, from `/etc/os-release` and archiso's mark; anything else is refused |
-| `jupiter/common.py` | what every phase uses: `run`, `succeeds`, `output`, `log`, `warn` |
-| `jupiter/questions.py`, `disks.py` | phase 1's questions, and its disks: the system's disk, LUKS2, data disks |
+| `jupiter/common.py` | what every phase uses: `run`, `succeeds`, `output`, `log`, `warn`; the GPUs (`graphics_cards`) |
+| `jupiter/questions.py`, `disks.py` | phase 1's questions (and the X layout and country they imply), and its disks: the system's disk, LUKS2, Btrfs and its mounts, data disks |
 | `jupiter/dotfiles.py` | phase 4's start: the clone, its links, the first theme |
-| `jupiter/secureboot.py`, `tpm.py`, `keyring.py` | Secure Boot keys, the TPM binding (phase 4's last step), the login keyring |
+| `jupiter/secureboot.py`, `tpm.py`, `keyring.py`, `fingerprint.py` | Secure Boot keys, the TPM binding (phase 4's last step), the login keyring, enrolling a finger |
 | `jupiter/config.py` | where the dotfiles come from (fork here) |
 | `docs/` | for people: NixOS, and encrypting an existing install |
 
 **Arch**
 
-| Path | What |
+| Path | Purpose |
 | --- | --- |
 | `jupiter/arch/phase1.py` … `phase4.py` | the phases: pacstrap and the boot from the ISO, the desktop, your packages (paru for the AUR), the dotfiles' root files |
 | `jupiter/arch/common.py` | the package lists, and installing them so a broken one is skipped (`install`, `skip`) |
@@ -40,13 +40,13 @@ Three parts: what both systems run, what only Arch runs, what only NixOS runs. A
 
 **NixOS**
 
-| Path | What |
+| Path | Purpose |
 | --- | --- |
 | `jupiter/nixos/` | the phases: `phase1.py` (then `hosts/<name>/` and `nixos-install`), `system.py` (phases 2 and 3: one `nixos-rebuild switch`), `phase4.py` (what the flake cannot declare), `tpm.py`, `common.py` (a host's `settings.json`) |
 | `flake.nix`, `flake.lock`, `nixos/` | the system: `default.nix` declares `jupiter.settings` (the schema phase 1 writes) and imports `base`, `desktop`, `packages`, `login` (greetd and PAM), `secureboot` (lanzaboote), `theme` (Stylix and home-manager) |
 | `hosts/<name>/` | one machine: `settings.json` (phase 1's answers) and `hardware-configuration.nix`; `hosts/example/` is what tests and CI evaluate |
 
-Tests live in `../Jupiter-testing` (`installer/`, `installer/security/`); see its `AGENTS.md`.
+Tests live in `../Jupiter-testing` (`installer/`, `installer/security/`); see its `CLAUDE.md`.
 
 ## Code
 
@@ -69,7 +69,7 @@ Tests live in `../Jupiter-testing` (`installer/`, `installer/security/`); see it
 - On NixOS, phases 2 to 4 refuse root (nixos-rebuild builds as the user and asks sudo for the switch); on Arch, 3 and 4 do.
 - `distro.OS_RELEASE` reads `JUPITER_OS_RELEASE` when set: the tests' way to run either system's phases anywhere.
 
-## Done means
+## Definition of done
 
 - `./check.sh` passes (`--fix` formats first): lint, then both systems' suites at a 95 % coverage floor. NixOS evaluation tests need Nix and `JUPITER_NIXPKGS` locally; CI always runs them.
 - New behaviour has its test in `../Jupiter-testing/installer/`, on both systems where it applies, and a security test where it touches disks, secrets, users or what runs as root.

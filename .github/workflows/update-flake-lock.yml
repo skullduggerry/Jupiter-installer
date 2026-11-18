@@ -30,30 +30,30 @@ env:
 
 jobs:
   update:
-    name: Update, check, commit
+    name: Update flake.lock
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: checkout
       - uses: cachix/install-nix-action@v31
-      - name: Lay out the repos
+      - name: Clone repos
         run: |
           export GIT_TERMINAL_PROMPT=0
           url=https://github.com/skullduggerry/Jupiter-testing.git
           git clone --quiet --depth 1 --branch "$BRANCH" "$url" Jupiter-testing 2>/dev/null ||
             git clone --quiet --depth 1 "$url" Jupiter-testing
           bash Jupiter-testing/scripts/ci-repos.sh checkout "$BRANCH"
-      - name: Update the inputs
+      - name: Update inputs
         working-directory: Jupiter-installer
         env:
           EVENT: ${{ github.event_name }}
         run: |
           if [ "$EVENT" = push ]; then nix flake lock; else nix flake update; fi
           git diff --stat -- flake.lock
-      - name: Check the system on the new lock
+      - name: Check NixOS system
         run: bash Jupiter-testing/scripts/nixos-check.sh
-      - name: Commit and push it, then check.yml
+      - name: Commit, push and run check.yml
         working-directory: Jupiter-installer
         env:
           GH_TOKEN: ${{ github.token }}

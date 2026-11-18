@@ -38,7 +38,7 @@ lsblk -no NAME,FSTYPE "$ESP" "$ROOT"
 
 The second line must say `btrfs`, the first `vfat`. Stop if they do not.
 
-## 2. Make room for the LUKS header
+## 2. Shrink the file system
 
 LUKS2 keeps its header (16 MiB) at the start of the partition, so the file
 system gives up 32 MiB at its end first:
@@ -58,7 +58,7 @@ Answer `YES` to its warning, then type the passphrase you will type at boot
 cryptsetup reencrypt --encrypt --type luks2 --reduce-device-size 32M "$ROOT"
 ```
 
-## 4. Open it and give the file system its room back
+## 4. Open the volume and grow the file system
 
 ```bash
 cryptsetup open "$ROOT" root
@@ -70,7 +70,7 @@ mount -o subvol=@pkg /dev/mapper/root /mnt/var/cache/pacman/pkg
 mount "$ESP" /mnt/boot
 ```
 
-## 5. Boot it as phase 1 boots a new install
+## 5. Set up the encrypted boot
 
 The root is opened in systemd's initramfs (crypttab's `x-initrd.attach`),
 its passphrase asked in your console keymap (`sd-vconsole`), and the kernel
@@ -134,7 +134,7 @@ arch-chroot /mnt systemctl unmask systemd-tpm2-setup-early.service \
     systemd-pcrosseparator.service
 ```
 
-## 6. Reboot, then bind the TPM
+## 6. Reboot and bind the TPM
 
 ```bash
 umount -R /mnt
@@ -152,7 +152,7 @@ header backup:
 ~/Jupiter-installer/bootstrap.sh 4
 ```
 
-## If something goes wrong
+## Troubleshooting
 
 - Interrupted during step 3: boot the ISO again and run
   `cryptsetup reencrypt --resume-only "$ROOT"`.

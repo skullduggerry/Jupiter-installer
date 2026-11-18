@@ -2,8 +2,7 @@
 # installs, and nothing of the other Jupiter repos: Jupiter-dotfiles' own
 # check.yml checks the dotfiles, and Jupiter-testing's, where the tests and
 # linters live, checks all three with its tools as pushed. The installer's
-# suites read the
-# dotfiles it installs, which come from main (or this branch, where the
+# suites read the dotfiles it installs, which come from main (or this branch, where the
 # dotfiles have it): a change there that breaks the installer shows here by
 # the next daily run. Daily on main as well, as Arch's packages move between
 # pushes (nixpkgs moves with flake.lock, which update-flake-lock.yml updates,
@@ -27,6 +26,11 @@ on:
   schedule:
     - cron: "17 4 * * *"
 
+# The token reads the repo, nothing more: the steps run other repos'
+# branches' code.
+permissions:
+  contents: read
+
 concurrency:
   group: check-${{ github.ref }}
   cancel-in-progress: true
@@ -42,13 +46,24 @@ defaults:
 
 jobs:
   arch:
-    name: Arch (lint, the installer's suites)
+    name: "Arch: lint and test"
     runs-on: ubuntu-latest
+    # A hung test fails in hours, not GitHub's six.
+    timeout-minutes: 120
+    env:
+      # Nix's settings in the container, with the job's token for GitHub's
+      # API, as install-nix-action gives the nixos job: unauthenticated,
+      # fetching the flake's inputs runs into its rate limit.
+      NIX: |
+        experimental-features = nix-command flakes
+        build-users-group =
+        sandbox = false
+        access-tokens = github.com=${{ github.token }}
     container:
       image: archlinux:latest
       options: --privileged
     steps:
-      - name: Install tools
+      - name: Install packages
         # What Jupiter-testing's lint.sh and test.sh ask for the installer,
         # with mypy's stubs; xdg-user-dirs and sudo's visudo check the home
         # folders and sudo rules the phases write.
@@ -61,7 +76,7 @@ jobs:
             ruff mypy python-pygobject-stubs shellcheck shfmt nix actionlint \
             python-coverage python-gobject util-linux file xdg-user-dirs diffutils
           pacman -Q python nix
-      - name: Add an unprivileged user
+      - name: Create test user
         # Root reads every file, which the permission checks rely on not
         # doing, and phases 2 to 4 refuse it. Nix runs as that user too,
         # single-user, its store theirs.
@@ -69,10 +84,10 @@ jobs:
           useradd -m ci
           install -d -o ci /nix
           chown -R ci: /nix
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: checkout
-      - name: Lay out the repos
+      - name: Clone repos
         run: |
           chown -R ci: "$GITHUB_WORKSPACE"
           as_ci() { sudo -u ci -H env GIT_TERMINAL_PROMPT=0 "$@"; }
@@ -80,7 +95,7 @@ jobs:
           as_ci git clone --quiet --depth 1 --branch "$BRANCH" "$url" Jupiter-testing 2>/dev/null ||
             as_ci git clone --quiet --depth 1 "$url" Jupiter-testing
           as_ci bash Jupiter-testing/scripts/ci-repos.sh checkout "$BRANCH"
-      - name: Find the flake's nixpkgs
+      - name: Find flake nixpkgs
         id: nixpkgs
         # The NixOS suites evaluate the modules against the nixpkgs
         # flake.lock pins.
@@ -91,50 +106,36 @@ jobs:
           # The Nix linters (nixfmt, statix, deadnix), from the same nixpkgs.
           sudo -u ci -H env NIX_CONFIG="$NIX" nix build --impure --out-link /home/ci/tools/nix \
             --expr "with import $nixpkgs { }; buildEnv { name = \"nix-linters\"; paths = [ nixfmt statix deadnix ]; }"
-        env:
-          # The job's token for GitHub's API, as install-nix-action gives the
-          # nixos job: unauthenticated, fetching the flake's inputs runs into
-          # its rate limit.
-          NIX: |
-            experimental-features = nix-command flakes
-            build-users-group =
-            sandbox = false
-            access-tokens = github.com=${{ github.token }}
       - name: Lint
         run: |
           cd Jupiter-installer
           sudo -u ci -H env PATH="/home/ci/tools/nix/bin:$PATH" ./check.sh lint
-      - name: Test, Arch and NixOS
+      - name: Test
         # After a failed lint too, while the repo is there to test.
         if: (success() || failure()) && steps.nixpkgs.outcome == 'success'
         run: |
           cd Jupiter-installer
           sudo -u ci -H env PATH="/home/ci/tools/nix/bin:$PATH" \
             JUPITER_NIXPKGS="$JUPITER_NIXPKGS" NIX_CONFIG="$NIX" ./check.sh test installer
-        env:
-          # As above.
-          NIX: |
-            experimental-features = nix-command flakes
-            build-users-group =
-            sandbox = false
-            access-tokens = github.com=${{ github.token }}
 
   nixos:
-    name: NixOS (the flake)
+    name: "NixOS: check flake"
     runs-on: ubuntu-latest
+    # A hung test fails in hours, not GitHub's six.
+    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: checkout
       - uses: cachix/install-nix-action@v31
-      - name: Lay out the repos
+      - name: Clone repos
         run: |
           export GIT_TERMINAL_PROMPT=0
           url=https://github.com/skullduggerry/Jupiter-testing.git
           git clone --quiet --depth 1 --branch "$BRANCH" "$url" Jupiter-testing 2>/dev/null ||
             git clone --quiet --depth 1 "$url" Jupiter-testing
           bash Jupiter-testing/scripts/ci-repos.sh checkout "$BRANCH"
-      - name: The system
+      - name: Check NixOS system
         # Jupiter-testing's scripts/nixos-check.sh says what it checks; the
         # update of flake.lock runs it too, the dotfiles' part as well.
         run: bash Jupiter-testing/scripts/nixos-check.sh installer

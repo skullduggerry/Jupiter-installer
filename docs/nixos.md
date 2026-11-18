@@ -7,7 +7,7 @@ runs on (archiso's mark, `VARIANT_ID=installer` on the NixOS ISO, `ID=` in
 `/etc/os-release` once installed) and refuses any other, as phase 1 erases
 disks. Jupiter-dotfiles serves both, and Jupiter-testing checks both.
 
-## The idea
+## Overview
 
 The Arch side is imperative: four Python phases run pacman, paru,
 `arch-chroot` and `sudo` in order. On NixOS the system is a function of its
@@ -71,7 +71,7 @@ Passwords never enter the configuration: everything in it ends up in the
 world-readable store. Phase 1 sets them with `chpasswd` on stdin inside
 `nixos-enter`, and `users.mutableUsers` stays on.
 
-## What NixOS made different, and how it is handled
+## Differences from Arch
 
 The dotfiles were written for Arch's file system. They now serve both
 systems: where they can find a file by the system's own means they do
@@ -186,7 +186,7 @@ the system declares), and where a path is fixed in QML or CSS,
 - **PipeWire's JACK:** NixOS deprecates the global JACK replacement; run
   JACK apps with `pw-jack`.
 
-## The theme: wallust, and Stylix beside it
+## Theming
 
 The dotfiles' wallust templates colour the shell, GTK, Qt, kitty and nvim
 on NixOS exactly as on Arch: `apply.sh` renders them when a theme is
@@ -226,7 +226,7 @@ glass.
   `boot.loader.timeout = 0` it is not shown. Plymouth stays off, which keeps
   the passphrase prompt on the console.
 
-## Packages nixpkgs has differently, or not
+## Package differences
 
 | Arch | NixOS |
 |---|---|
@@ -240,7 +240,7 @@ glass.
 | ufw | NixOS's firewall, see above |
 | qemu, swtpm, edk2-ovmf (the VM checks) | not yet listed: the VM rig is Arch's (below) |
 
-## Why nixos-unstable, not a stable release
+## Why nixos-unstable
 
 Checked against nixos-26.05, the stable release when this was written, with
 the dotfiles of the time:
@@ -295,7 +295,7 @@ What works and how it is checked:
   4. Merge the dotfiles' branch to their `main` with this one: until then
      the lock screen's finger fails on NixOS (the password works).
 
-## Developing
+## Development
 
 As for the Arch side: `./check.sh` lints and tests this repo, both systems'
 suites, and `./check.sh check all` every repo. The evaluation tests need

@@ -49,7 +49,7 @@ Fork this repo and the dotfiles, and point `bootstrap.sh` and `jupiter/config.py
 ../Jupiter-testing/scripts/install-hooks.sh   # once: check on every commit and push
 ```
 
-`check.sh` clones Jupiter-testing next to this repo if it is missing. The NixOS evaluations need Nix. [AGENTS.md](AGENTS.md) maps the code and its rules.
+`check.sh` clones Jupiter-testing next to this repo if it is missing. The NixOS evaluations need Nix. [CLAUDE.md](CLAUDE.md) maps the code and its rules.
 
 ## Documentation
 
