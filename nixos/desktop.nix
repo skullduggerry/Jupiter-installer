@@ -152,9 +152,10 @@ in
     PICTURES=Screenshots
   '';
 
-  # systemd's TPM measurements, which only something bound to the TPM reads:
-  # without an encrypted disk nothing is, and they cost every boot half a
-  # second. An encrypted system keeps them for its TPM binding.
+  # systemd's TPM units and the initrd's TPM support, which only the TPM
+  # binding of an encrypted root uses: left out without one. (systemd runs
+  # its measurements only where a signed image's stub started the boot,
+  # which lanzaboote's alone does here.)
   systemd.tpm2.enable = encrypted;
   boot.initrd.systemd.tpm2.enable = encrypted;
 

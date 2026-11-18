@@ -52,7 +52,7 @@ in
   programs.steam.enable = true;
   # Firmware updates, Secure Boot's revocation list (dbx) among them. Running
   # them is yours: `fwupdmgr refresh && fwupdmgr update`, then `bootstrap.sh
-  # 3` again if the disk asked for its passphrase at the next boot.
+  # 4` again if the disk asked for its passphrase at the next boot.
   services.fwupd.enable = true;
 
   # NixOS's firewall is on, where Arch's ufw is installed but off: KDE

@@ -23,10 +23,10 @@ Three parts: what both systems run, what only Arch runs, what only NixOS runs. A
 | `bootstrap.sh`, `check.sh` | `curl … \| bash` entry: fetches or updates this repo, brings git and Python where either ISO lacks them, runs `python3 -m jupiter`; also forwards `check`, `lint`, `test` to `check.sh` |
 | `jupiter/__main__.py` | which phases run, by system (`distro.py`) and by whether this is the live ISO |
 | `jupiter/distro.py` | Arch or NixOS, ISO or installed, from `/etc/os-release` and archiso's mark; anything else is refused |
-| `jupiter/common.py` | what every phase uses: `run`, `succeeds`, `output`, `log`, `warn` |
-| `jupiter/questions.py`, `disks.py` | phase 1's questions, and its disks: the system's disk, LUKS2, data disks |
+| `jupiter/common.py` | what every phase uses: `run`, `succeeds`, `output`, `log`, `warn`; the GPUs (`graphics_cards`) |
+| `jupiter/questions.py`, `disks.py` | phase 1's questions (and the X layout and country they imply), and its disks: the system's disk, LUKS2, Btrfs and its mounts, data disks |
 | `jupiter/dotfiles.py` | phase 4's start: the clone, its links, the first theme |
-| `jupiter/secureboot.py`, `tpm.py`, `keyring.py` | Secure Boot keys, the TPM binding (phase 4's last step), the login keyring |
+| `jupiter/secureboot.py`, `tpm.py`, `keyring.py`, `fingerprint.py` | Secure Boot keys, the TPM binding (phase 4's last step), the login keyring, enrolling a finger |
 | `jupiter/config.py` | where the dotfiles come from (fork here) |
 | `docs/` | for people: NixOS, and encrypting an existing install |
 

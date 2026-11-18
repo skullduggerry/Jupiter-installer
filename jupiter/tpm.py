@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from . import secureboot
-from .common import log, output, run, succeeds, warn
+from .common import log, output, run, warn
 
 TPM = Path("/sys/class/tpm/tpm0")
 SYSTEMD_VENDOR = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
@@ -66,24 +66,28 @@ def main() -> None:
         return
     name, device = volume
     named = _name_root(name)
-    if not (TPM / "tpm_version_major").exists() or (
-        (TPM / "tpm_version_major").read_text().strip() != "2"
-    ):
+    if not has_tpm2():
         log("No TPM 2.0 here: the passphrase unlocks the disk at boot")
         return
-    left = _missing()
+    left = missing()
     if left:
         for step in left:
             warn(step)
         warn("Until then the passphrase unlocks the disk at boot.")
         return
-    changed = _bind(device)
+    changed = bind(device)
     changed = _fixate(name, device) or changed
-    changed = _recovery(device) or changed
+    changed = recovery(device) or changed
     if changed:
-        _header_backup(device)
+        header_backup(device)
     elif not named:
         log("The TPM unlocks the disk; nothing to change")
+
+
+def has_tpm2() -> bool:
+    """Whether this machine has a TPM 2.0, which systemd-cryptenroll needs."""
+    version = TPM / "tpm_version_major"
+    return version.exists() and version.read_text().strip() == "2"
 
 
 def root_volume() -> tuple[str, str] | None:
@@ -130,7 +134,7 @@ def _name_root(name: str) -> bool:
     return True
 
 
-def _missing(image: str = "") -> list[str]:
+def missing(image: str = "") -> list[str]:
     """What the TPM binding still needs, as steps for the user; image names
     the signed kernel image a boot must start from (Arch's UKI unless
     given)."""
@@ -145,10 +149,9 @@ def _missing(image: str = "") -> list[str]:
             "with `sudo sbctl create-keys`, then run bootstrap.sh 4 again."
         ]
     if firmware == "setup":
-        enroll = ["sudo", "sbctl", "enroll-keys", "--microsoft"]
-        if not succeeds(*enroll):
+        if not secureboot.enroll("sudo"):
             return ["sbctl could not enrol the keys: see what it said above."]
-        log("Enrolled the Secure Boot keys, with Microsoft's")
+        log("Enrolled the Secure Boot keys")
         return [
             "Reboot, turn Secure Boot on in the firmware's setup if it is "
             "not, then run bootstrap.sh 4 again to bind the disk to the TPM."
@@ -159,6 +162,12 @@ def _missing(image: str = "") -> list[str]:
             "run bootstrap.sh 4 again. If the firmware still has its own "
             "keys, erase them there first (Setup Mode); phase 4 enrols "
             "this system's."
+        ]
+    if not (TPM / "pcr-sha256").is_dir():
+        return [
+            "This TPM has no SHA-256 bank of PCRs active, which the binding "
+            "uses: turn it on in the firmware's TPM settings, then run "
+            "bootstrap.sh 4 again."
         ]
     if not STUB_INFO.exists():
         return [
@@ -192,7 +201,7 @@ def policy(pcr7: str) -> str:
     return hashlib.sha256(bytes(32) + command + selection + values).hexdigest()
 
 
-def _bind(device: str) -> bool:
+def bind(device: str) -> bool:
     """A TPM slot for PCR 7 as it is now and PCR 15 zero; True if made."""
     pcr7 = (TPM / "pcr-sha256/7").read_text().strip().lower()
     wanted = policy(pcr7)
@@ -206,9 +215,14 @@ def _bind(device: str) -> bool:
     if tokens:
         log("PCR 7 changed since the TPM was enrolled: enrolling it again")
     log("Binding the disk to the TPM: type its passphrase or recovery key")
+    # Nothing but PCRS: empty, these turn off what systemd-cryptenroll
+    # would add by itself where a pcrlock.json or a tpm2-pcr-public-key.pem
+    # lies about (systemd-cryptenroll(1)), which policy() leaves out, so
+    # every run would enrol again.
     run(
         "sudo", "systemd-cryptenroll", "--wipe-slot=tpm2",
-        "--tpm2-device=auto", f"--tpm2-pcrs={PCRS}", device,
+        "--tpm2-device=auto", f"--tpm2-pcrs={PCRS}", "--tpm2-pcrlock=",
+        "--tpm2-public-key=", device,
     )  # fmt: skip
     return True
 
@@ -230,7 +244,7 @@ def _fixate(name: str, device: str) -> bool:
         options = fields[3].split(",") if len(fields) > 3 else []
         # systemd-cryptsetup tries the TPM slot only when told to.
         wanted = ["tpm2-device=auto", "tpm2-measure-pcr=yes"]
-        key = _volume_key_id(name, uuid)
+        key = volume_key_id(name, uuid)
         if key:
             wanted.append(f"fixate-volume-key={key}")
         kept = [
@@ -263,7 +277,7 @@ def _fixate(name: str, device: str) -> bool:
     return True
 
 
-def _volume_key_id(name: str, uuid: str) -> str | None:
+def volume_key_id(name: str, uuid: str) -> str | None:
     """The hash of the root's volume key, as systemd-cryptsetup measured it
     into PCR 15 this boot (HMAC-SHA256 of cryptsetup:<name>:<uuid> keyed with
     the volume key), from the measurement log."""
@@ -288,7 +302,7 @@ def _volume_key_id(name: str, uuid: str) -> str | None:
     return None
 
 
-def _recovery(device: str) -> bool:
+def recovery(device: str) -> bool:
     """A recovery key, once; True if one was added."""
     if _tokens(device, "systemd-recovery"):
         return False
@@ -297,7 +311,7 @@ def _recovery(device: str) -> bool:
     return True
 
 
-def _header_backup(device: str) -> None:
+def header_backup(device: str) -> None:
     print(BACKUP_HELP, flush=True)
     while True:
         answer = input("Write a header backup to (a new file; empty: skip): ")

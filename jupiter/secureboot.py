@@ -1,8 +1,8 @@
 """Secure Boot with keys of your own, through sbctl.
 
 Phase 1 makes the keys on an encrypted system and enrols them, Microsoft's
-beside them (a graphics card's firmware is signed by Microsoft), when the
-firmware is in Setup Mode: its keys erased in the firmware's menu. sbctl then
+and the firmware's own beside them (enroll says why), when the firmware is
+in Setup Mode: its keys erased in the firmware's menu. sbctl then
 signs the unified kernel image each time mkinitcpio builds it, and
 systemd-boot each time systemd updates it; nothing else is signed, the bare
 kernel least of all, so under Secure Boot only that image boots, with its
@@ -11,6 +11,8 @@ refuses Arch's nvidia-open modules, which are unsigned (seen in the VM).
 """
 
 from pathlib import Path
+
+from .common import succeeds
 
 EFIVARS = Path("/sys/firmware/efi/efivars")
 GLOBAL = "8be4df61-93ca-11d2-aa0d-00e098032b8c"  # EFI_GLOBAL_VARIABLE
@@ -57,3 +59,18 @@ def state(efivars: Path | None = None) -> str:
     if setup:
         return "setup"
     return "on" if _flag("SecureBoot", efivars) else "off"
+
+
+def enroll(*through: str | Path) -> bool:
+    """Enrol this system's keys, run through a prefix (arch-chroot,
+    nixos-enter, sudo); True if they were.
+
+    Microsoft's go beside them, as a graphics card's firmware is signed by
+    Microsoft, and so do the keys the firmware ships as its defaults, as
+    the ArchWiki's sbctl section enrols them: without the maker's, some
+    firmware refuses its own updates or its option ROMs. sbctl refuses
+    defaults that are not volatile (anyone could have written them), and
+    firmware without usable defaults gets Microsoft's alone.
+    """
+    keys = [*through, "sbctl", "enroll-keys", "--microsoft"]
+    return succeeds(*keys, "--firmware-builtin") or succeeds(*keys)

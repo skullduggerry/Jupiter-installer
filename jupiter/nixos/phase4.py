@@ -15,14 +15,10 @@ finger in sudo's and polkit's, zsh as your shell) nixos/login.nix and
 base.nix declare instead.
 """
 
-import os
-import pwd
-import shutil
-import subprocess
 from pathlib import Path
 
-from .. import dotfiles, keyring
-from ..common import run, succeeds, warn
+from .. import dotfiles, fingerprint, keyring
+from ..common import run, warn
 from . import tpm
 
 # Root's copy of the login screen's installer (nixos/login.nix links it).
@@ -36,7 +32,7 @@ def main() -> None:
     repo = dotfiles.set_up()
     _install_greeter(repo)
     keyring.main()
-    _enroll_finger()
+    fingerprint.enroll()
     tpm.main()
 
 
@@ -51,29 +47,3 @@ def _install_greeter(repo: Path) -> None:
         )
         return
     run("sudo", INSTALL_GREETER, "--from", repo)
-
-
-def _enroll_finger() -> None:
-    """Where fprintd finds a reader and you have no finger enrolled, offer
-    to enrol one: the login screen, the lock screen, sudo and polkit take
-    it (nixos/login.nix)."""
-    if shutil.which("fprintd-list") is None:
-        return
-    user = pwd.getpwuid(os.getuid()).pw_name
-    listed = subprocess.run(
-        ["fprintd-list", user],
-        capture_output=True,
-        text=True,
-        env=os.environ | {"LC_ALL": "C"},
-        check=False,
-    )
-    if listed.returncode != 0 or "Device at" not in listed.stdout:
-        return
-    if "no fingers enrolled" not in listed.stdout:
-        return
-    answer = input(
-        "Enroll a fingerprint, to log in, unlock, and for sudo and polkit? "
-        "[Y/n] "
-    )
-    if answer.strip().lower() != "n" and not succeeds("fprintd-enroll"):
-        warn("No fingerprint enrolled: run fprintd-enroll later")

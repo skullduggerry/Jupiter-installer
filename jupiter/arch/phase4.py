@@ -13,13 +13,11 @@ passphrase at boot.
 
 import os
 import pwd
-import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 
-from .. import dotfiles, keyring, tpm
-from ..common import log, run, succeeds, warn
+from .. import dotfiles, fingerprint, keyring, tpm
+from ..common import log, run
 
 ZSH = Path("/usr/bin/zsh")
 SUDO_PAM = Path("/etc/pam.d/sudo")
@@ -30,7 +28,7 @@ POLKIT_VENDOR_PAM = Path("/usr/lib/pam.d/polkit-1")
 # failed matches, 10 s without a finger or with no print enrolled, the
 # password is asked for as before.
 FINGERPRINT = "auth       sufficient   pam_fprintd.so max-tries=3 timeout=10\n"
-# The line before it had limits, which an older run put in: replaced.
+# The line an older run put in, without those limits: replaced.
 OLD_FINGERPRINT = "auth       sufficient   pam_fprintd.so\n"
 
 
@@ -67,32 +65,15 @@ def _install_greeter(repo: Path) -> None:
 
 
 def _fingerprint() -> None:
-    """Where fprintd finds a reader: enroll a finger, and let sudo and
-    polkit's prompts take it.
+    """Where fprintd finds a reader: enrol a finger (fingerprint.py), and
+    let sudo and polkit's prompts take it.
 
     The dotfiles' lock screen listens for a finger by itself, and their login
     screen asks for one as it opens and for Enter on an empty field; the
     login keyring, kept unencrypted (keyring.py), opens either way.
     """
-    if shutil.which("fprintd-list") is None:
+    if not fingerprint.enroll():
         return
-    user = pwd.getpwuid(os.getuid()).pw_name
-    listed = subprocess.run(
-        ["fprintd-list", user],
-        capture_output=True,
-        text=True,
-        env=os.environ | {"LC_ALL": "C"},
-        check=False,
-    )
-    if listed.returncode != 0 or "Device at" not in listed.stdout:
-        return
-    if "no fingers enrolled" in listed.stdout:
-        answer = input(
-            "Enroll a fingerprint, to log in, unlock, and for sudo and "
-            "polkit? [Y/n] "
-        )
-        if answer.strip().lower() != "n" and not succeeds("fprintd-enroll"):
-            warn("No fingerprint enrolled: run fprintd-enroll later")
     for stack, vendor in ((SUDO_PAM, None), (POLKIT_PAM, POLKIT_VENDOR_PAM)):
         _take_a_finger(stack, vendor)
 

@@ -163,8 +163,8 @@ the system declares), and where a path is fixed in QML or CSS,
   update` and a commit.
 - **Bounded growth.** Ten boot entries (lanzaboote's limit follows
   systemd-boot's), generations older than a month collected weekly, the
-  store deduplicated: a signed image per generation would otherwise fill
-  the 1 GiB ESP.
+  store deduplicated: each generation's kernel and initrd would otherwise
+  fill the 1 GiB ESP.
 - **Qt's plugins.** `qt.enable` sets `QT_PLUGIN_PATH`, without which
   Quickshell finds no .webp support and Qt apps neither qt6ct nor Kvantum;
   the theme stays the dotfiles' (`QT_QPA_PLATFORMTHEME` in `uwsm/env`).
@@ -175,8 +175,10 @@ the system declares), and where a path is fixed in QML or CSS,
   the Arch installer's step that changed `root=UUID=` is not needed.
 - **Secure Boot** is lanzaboote's: phase 1 makes the keys with sbctl into
   `/mnt/var/lib/sbctl` before `nixos-install` (lanzaboote signs during it)
-  and enrols them, Microsoft's beside them, in Setup Mode. Every generation
-  is a signed image with its command line inside, as Arch's UKI is.
+  and enrols them, Microsoft's and the firmware's own beside them, in Setup
+  Mode. Every generation boots through a signed stub holding its command
+  line and the hashes of its kernel and initrd, which are kept beside it on
+  the ESP; Arch's UKI holds all three whole.
 - **Subvolumes:** `@nix` at `/nix` where Arch has `@pkg`.
 - **No reflector, no wireless-regdom file:** the binary cache replaces
   mirrors, and the regulatory domain is a `cfg80211` option from the

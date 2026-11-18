@@ -1,7 +1,9 @@
 """What both phase 1s ask from the live ISO, and what makes an answer valid.
 
 Arch's (jupiter/arch/phase1.py) and NixOS's (jupiter/nixos/phase1.py) ask
-the same questions in the same order; only their defaults differ.
+the same questions in the same order; only their defaults differ. What an
+answer implies beyond itself (the X layout of a keymap, the country of a
+time zone) is worked out here too.
 """
 
 import getpass
@@ -16,6 +18,9 @@ USERNAME = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 # The account greetd's package makes for the login screen, which keeps a
 # user of that name instead: the login screen would run as them.
 RESERVED = {"greeter"}
+# kbd-model-map's columns after the keymap: NixOS's settings.json names
+# them so, Arch's vconsole.conf as XKBLAYOUT and so on.
+XKB = ("layout", "model", "variant", "options")
 
 
 def ask(question: str, default: str, valid: Callable[[str], object]) -> str:
@@ -52,3 +57,25 @@ def is_new_user(name: str) -> bool:
 def listed(*command: str) -> Callable[[str], bool]:
     """Whether an answer is one of the words a command lists."""
     return set(output(*command).split()).__contains__
+
+
+def keyboard(keymap: str, table: str) -> dict[str, str]:
+    """The X layout for a console keymap, from systemd's kbd-model-map, as
+    localectl set-keymap finds it: the desktop and the login screen type in
+    the layout the passphrase was typed in."""
+    for line in table.splitlines():
+        fields = line.split()
+        if fields[:1] == [keymap]:
+            values = zip(XKB, fields[1:5], strict=False)
+            return {name: value for name, value in values if value != "-"}
+    return {}
+
+
+def country(timezone: str, table: str) -> str | None:
+    """The country of a time zone, from tzdata's zone.tab, whose Wi-Fi
+    rules apply."""
+    for line in table.splitlines():
+        fields = line.split("\t")
+        if len(fields) > 2 and fields[2] == timezone:
+            return fields[0]
+    return None

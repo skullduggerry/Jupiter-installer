@@ -121,8 +121,9 @@ arch-chroot /mnt mkinitcpio --allpresets
 arch-chroot /mnt systemctl enable systemd-boot-update.service
 ```
 
-Phase 2 turned systemd's TPM measurements off on the unencrypted system;
-the TPM binding needs them:
+Phase 2 used to mask systemd's TPM measurements on a system without
+encryption, and the TPM binding needs them; where they are not masked, this
+changes nothing:
 
 ```bash
 arch-chroot /mnt systemctl unmask systemd-tpm2-setup-early.service \

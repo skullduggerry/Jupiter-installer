@@ -8,7 +8,8 @@ an installed system it goes through sudo.
 import os
 from pathlib import Path
 
-from ..common import LIVE, output, run
+from .. import questions
+from ..common import LIVE, run
 from .common import install, packages, skipped
 
 SERVICES = {  # package: its service
@@ -23,22 +24,6 @@ USER_UNITS = {  # package: its unit, for every user's session
     # at it, since gnome-keyring 46 has no SSH agent of its own.
     "gnome-keyring": "gcr-ssh-agent.socket",
 }
-
-# systemd's TPM measurements, which only something bound to the TPM reads:
-# without an encrypted disk (phase 1 asked) nothing is, and they cost every
-# boot half a second. An encrypted system keeps them for its TPM binding.
-TPM_UNITS = [
-    "systemd-tpm2-setup-early.service",
-    "systemd-tpm2-setup.service",
-    "systemd-pcrphase-initrd.service",
-    "systemd-pcrphase-sysinit.service",
-    "systemd-pcrphase.service",
-    "systemd-pcrmachine.service",
-    "systemd-pcrproduct.service",
-    "systemd-pcrlogin@.service",
-    "systemd-pcrnvdone.service",
-    "systemd-pcrosseparator.service",
-]
 
 REGDOM = "/etc/conf.d/wireless-regdom"
 # The folders xdg-user-dirs makes in a home at its first login, and points
@@ -60,17 +45,7 @@ def country(root: Path) -> str | None:
         return None
     zone = os.readlink(localtime).partition("zoneinfo/")[2]
     table = (root / "usr/share/zoneinfo/zone.tab").read_text()
-    for line in table.splitlines():
-        fields = line.split("\t")
-        if len(fields) > 2 and fields[2] == zone:
-            return fields[0]
-    return None
-
-
-def encrypted() -> bool:
-    """Whether a disk here holds a LUKS volume, which a TPM may unlock:
-    phase 1's, unless encryption was declined, or one set up by hand."""
-    return "crypto_LUKS" in output("lsblk", "--noheadings", "-o", "FSTYPE")
+    return questions.country(zone, table)
 
 
 def main() -> None:
@@ -87,10 +62,8 @@ def main() -> None:
     if units:
         run(*target, "systemctl", "--global", "enable", *units)
     if "xdg-user-dirs" not in skipped:
-        write = f"cat > {USER_DIRS}"
-        run(*target, "sh", "-c", write, data=USER_DIRS_DEFAULTS)
-    if not encrypted():
-        run(*target, "systemctl", "mask", *TPM_UNITS)
+        write = ["install", "-m", "0644", "/dev/stdin", USER_DIRS]
+        run(*target, *write, data=USER_DIRS_DEFAULTS)
     # Wi-Fi drivers that do not set their country themselves use the
     # world's rules otherwise: lower power, narrower channels on 5 GHz.
     code = country(Path("/mnt") if LIVE else Path("/"))

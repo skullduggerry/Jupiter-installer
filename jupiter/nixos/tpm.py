@@ -27,22 +27,20 @@ def main() -> None:
     if volume is None:
         return
     name, device = volume
-    if not (core.TPM / "tpm_version_major").exists() or (
-        (core.TPM / "tpm_version_major").read_text().strip() != "2"
-    ):
+    if not core.has_tpm2():
         log("No TPM 2.0 here: the passphrase unlocks the disk at boot")
         return
-    left = core._missing(IMAGE)
+    left = core.missing(IMAGE)
     if left:
         for step in left:
             warn(step)
         warn("Until then the passphrase unlocks the disk at boot.")
         return
-    changed = core._bind(device)
+    changed = core.bind(device)
     changed = _declare(name, device) or changed
-    changed = core._recovery(device) or changed
+    changed = core.recovery(device) or changed
     if changed:
-        core._header_backup(device)
+        core.header_backup(device)
     else:
         log("The TPM unlocks the disk; nothing to change")
 
@@ -55,7 +53,7 @@ def _declare(name: str, device: str) -> bool:
     machine = host()
     old = read_settings(machine)
     uuid = output("sudo", "cryptsetup", "luksUUID", device).strip()
-    key = core._volume_key_id(name, uuid) or old.get("volumeKey")
+    key = core.volume_key_id(name, uuid) or old.get("volumeKey")
     new = old | {"tpm": True, "volumeKey": key}
     if new == old:
         return False

@@ -34,9 +34,10 @@ in
     "nix-command"
     "flakes"
   ];
-  # Each generation keeps its packages in the store and, encrypted, a signed
-  # image of 50-100 MiB on the 1 GiB ESP: without bounds a rebuild fails
-  # once either is full. Ten boot entries (lanzaboote's limit follows
+  # Each generation keeps its packages in the store and its boot files on
+  # the 1 GiB ESP (encrypted, a signed stub, and a kernel and initrd of
+  # tens of MiB for each that no older generation shares): without bounds
+  # a rebuild fails once either is full. Ten boot entries (lanzaboote's limit follows
   # systemd-boot's), generations older than a month collected weekly, and
   # identical files in the store linked into one.
   boot.loader.systemd-boot.configurationLimit = 10;
@@ -160,8 +161,9 @@ in
     open = true;
     modesetting.enable = true;
   };
-  # From the Hyprland wiki's Nvidia page, for a machine whose only GPU is one;
-  # uwsm reads it for Hyprland.
+  # For a machine whose only GPU is NVIDIA's: VA-API through
+  # nvidia-vaapi-driver (its direct backend) and NVIDIA's GLX, as the Arch
+  # installer writes it; uwsm reads it for Hyprland.
   environment.etc."xdg/uwsm/env-hyprland" = lib.mkIf nvidiaOnly {
     text = ''
       export LIBVA_DRIVER_NAME=nvidia

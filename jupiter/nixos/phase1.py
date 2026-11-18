@@ -3,10 +3,9 @@
 The questions and the disks are the same as on Arch (jupiter/questions.py,
 jupiter/disks.py): GPT with a 1 GiB EFI system partition at /boot, Btrfs
 subvolumes for everything else (@nix where Arch has pacman's cache), on
-LUKS2 unless you
-decline it, and other empty disks as encrypted data disks if you choose
-them, each opened by a key file on the system. A disk you do not choose is
-never written to or opened.
+LUKS2 unless you decline it, and other empty disks as encrypted data disks
+if you choose them, each opened by a key file on the system. A disk you do
+not choose is never written to or opened.
 
 What Arch's phase 1 then does with pacstrap and arch-chroot, and its phases
 2 and 3 with pacman, the flake declares (nixos/): this phase writes what it
@@ -24,11 +23,10 @@ import os
 import re
 import shutil
 import subprocess
-import uuid
 from pathlib import Path
 
 from .. import disks, questions, secureboot
-from ..common import INSTALLER_DIR, NVIDIA_TURING, output, run, succeeds, warn
+from ..common import INSTALLER_DIR, graphics_cards, output, run, warn
 from ..distro import OS_RELEASE
 from .common import write_settings
 
@@ -48,7 +46,6 @@ SUBVOLUMES = {
 SBCTL = Path("var/lib/sbctl")
 NIX = ["nix", "--extra-experimental-features", "nix-command flakes"]
 GRAPHICS = {"0x8086": "intel", "0x1002": "amd", "0x10de": "nouveau"}
-XKB = ("layout", "model", "variant", "options")
 LOCALE = re.compile(r"[a-z]{2,3}_[A-Z]{2}(@[a-z]+)?\.UTF-8")
 
 
@@ -94,7 +91,7 @@ def main() -> None:
     )
     if luks:
         root = f"/dev/mapper/{disks.ROOT_VOLUME}"
-    filesystem = _mount(esp, root)
+    filesystem = disks.make_system(esp, root, SUBVOLUMES)
     volumes = []
     for volume in data:
         data_luks, data_filesystem = disks.make_data_disk(volume, passphrase)
@@ -110,10 +107,10 @@ def main() -> None:
         "hostname": hostname,
         "user": user,
         "timezone": timezone,
-        "country": country(timezone, ZONE_TAB.read_text()),
+        "country": questions.country(timezone, ZONE_TAB.read_text()),
         "locale": locale,
         "keymap": keymap,
-        "xkb": keyboard(keymap, _kbd_model_map().read_text()),
+        "xkb": questions.keyboard(keymap, _kbd_model_map().read_text()),
         "esp": _uuid(esp),
         "root": {"luks": luks, "filesystem": filesystem},
         "data": volumes,
@@ -134,7 +131,7 @@ def main() -> None:
     run("git", "-C", copy, "add", "--", f"hosts/{hostname}")
     _carry_wifi()
     if encrypt:
-        _create_keys()
+        _create_keys(copy)
     run(
         "nixos-install", "--root", disks.MNT, "--no-root-passwd",
         "--no-channel-copy", "--flake", f"{copy}#{hostname}",
@@ -157,46 +154,9 @@ def _own(volume: disks.DataDisk, user: str) -> None:
     _enter("chown", f"{user}:", volume.mount)
 
 
-def _mount(esp: str, root: str) -> str:
-    """Format the ESP and the root, make the subvolumes and mount them all
-    at /mnt; returns the Btrfs's UUID."""
-    filesystem = str(uuid.uuid4())
-    run("mkfs.fat", "-F", "32", esp)
-    run("mkfs.btrfs", "--force", f"--uuid={filesystem}", root)
-    run("mount", root, disks.MNT)
-    run(
-        "btrfs",
-        "subvolume",
-        "create",
-        *(disks.MNT / name for name in SUBVOLUMES),
-    )
-    run("umount", disks.MNT)
-    for name, path in SUBVOLUMES.items():
-        options = f"compress=zstd,subvol={name}"
-        run("mount", "--mkdir", "-o", options, root, disks.MNT / path)
-    run(
-        "mount",
-        "--mkdir",
-        "-o",
-        "fmask=0077,dmask=0077",
-        esp,
-        disks.MNT / "boot",
-    )
-    return filesystem
-
-
 def _uuid(partition: str) -> str:
-    return output("blkid", "--match-tag", "UUID", "--output", "value",
-                  partition).strip()  # fmt: skip
-
-
-def country(timezone: str, table: str) -> str | None:
-    """The country of a time zone, from tzdata's zone.tab."""
-    for line in table.splitlines():
-        fields = line.split("	")
-        if len(fields) > 2 and fields[2] == timezone:
-            return fields[0]
-    return None
+    blkid = ["blkid", "--match-tag", "UUID", "--output", "value", partition]
+    return output(*blkid).strip()
 
 
 def _kbd_model_map() -> Path:
@@ -209,30 +169,14 @@ def _kbd_model_map() -> Path:
     return share / "systemd/kbd-model-map"
 
 
-def keyboard(keymap: str, table: str) -> dict[str, str]:
-    """The X layout for a console keymap, from systemd's kbd-model-map, as
-    localectl set-keymap finds it; the desktop and login screen type in it."""
-    for line in table.splitlines():
-        fields = line.split()
-        if fields[:1] == [keymap]:
-            values = zip(XKB, fields[1:5], strict=False)
-            return {name: value for name, value in values if value != "-"}
-    return {}
-
-
 def gpus(root: Path = Path("/")) -> list[str]:
     """The driver for each GPU: nvidia for NVIDIA's from Turing on, which
     nvidia-open supports, Mesa's (intel, amd, nouveau) for the rest."""
-    found = set()
-    for device in (root / "sys/bus/pci/devices").iterdir():
-        if not (device / "class").read_text().startswith("0x03"):
-            continue
-        vendor = (device / "vendor").read_text().strip()
-        model = int((device / "device").read_text(), 16)
-        if vendor == "0x10de" and model >= NVIDIA_TURING:
-            found.add("nvidia")
-        elif vendor in GRAPHICS:
-            found.add(GRAPHICS[vendor])
+    found = {
+        "nvidia" if nvidia_open else GRAPHICS[vendor]
+        for vendor, nvidia_open in graphics_cards(root)
+        if nvidia_open or vendor in GRAPHICS
+    }
     return sorted(found)
 
 
@@ -270,25 +214,31 @@ def _copy_installer(user: str) -> Path:
     return copy
 
 
-def _create_keys() -> None:
+def _create_keys(flake: Path) -> None:
     """Secure Boot keys of the new system's own, made before nixos-install,
-    whose lanzaboote signs systemd-boot and the kernel images with them."""
+    whose lanzaboote signs systemd-boot and the kernel images with them.
+
+    sbctl is the flake's (its locked nixpkgs), the one the system gets.
+    Without Landlock: sbctl 0.18 confines create-keys to its default
+    /var/lib before it reads --export and --database-path, which would
+    refuse /mnt/var/lib/sbctl (cmd/sbctl/create-keys.go).
+    """
     keys = disks.MNT / SBCTL
     keys.mkdir(mode=0o700, parents=True, exist_ok=True)
     run(
-        *NIX, "shell", "nixpkgs#sbctl", "--command", "sbctl", "create-keys",
+        *NIX, "shell", "--inputs-from", flake, "nixpkgs#sbctl", "--command",
+        "sbctl", "--disable-landlock", "create-keys",
         "--database-path", keys / "GUID", "--export", keys / "keys",
     )  # fmt: skip
 
 
 def _enroll_keys(firmware: str) -> None:
-    """Enrol the keys, Microsoft's beside them (a graphics card's firmware
-    is signed by Microsoft), if the firmware lets them be: in Setup Mode."""
+    """Enrol the keys, Microsoft's and the firmware's own beside them
+    (secureboot.enroll), if the firmware lets them be: in Setup Mode."""
     if firmware != "setup":
         return
-    enroll: list[str | Path] = ["nixos-enter", "--root", disks.MNT, "--"]
-    if not succeeds(*enroll, "sbctl", "enroll-keys", "--microsoft"):
-        warn("Could not enrol the Secure Boot keys: phase 3 says what is left")
+    if not secureboot.enroll("nixos-enter", "--root", disks.MNT, "--"):
+        warn("Could not enrol the Secure Boot keys: phase 4 says what is left")
 
 
 def _enter(*command: str, data: str | None = None) -> None:

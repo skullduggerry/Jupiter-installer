@@ -104,6 +104,7 @@ let
   '';
 
   faillock = "${config.security.pam.package}/lib/security/pam_faillock.so";
+  unixOrder = config.security.pam.services.jupiter-local-login.rules.auth.unix.order;
 
   greetd = lib.importTOML "${dotfiles}/etc/greetd/config.toml";
 
@@ -182,21 +183,23 @@ in
       enableGnomeKeyring = false;
       fprintAuth = false;
       rules.auth = {
+        # Around the password's own line, wherever NixOS puts it (its
+        # order moves when a module turns on PAM's early auth rules).
         faillock-preauth = {
-          order = 11600;
+          order = unixOrder - 50;
           control = "required";
           modulePath = faillock;
           args = [ "preauth" ];
         };
         unix.control = lib.mkForce "[success=1 default=bad]";
         faillock-authfail = {
-          order = 11800;
+          order = unixOrder + 50;
           control = "[default=die]";
           modulePath = faillock;
           args = [ "authfail" ];
         };
         faillock-authsucc = {
-          order = 11900;
+          order = unixOrder + 60;
           control = "required";
           modulePath = faillock;
           args = [ "authsucc" ];

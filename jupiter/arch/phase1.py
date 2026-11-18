@@ -22,10 +22,9 @@ from .. import disks, questions, secureboot
 from ..common import (
     INSTALLER_DIR,
     LIVE,
-    NVIDIA_TURING,
+    graphics_cards,
     output,
     run,
-    succeeds,
     warn,
 )
 
@@ -65,13 +64,14 @@ GRAPHICS = {
 }
 NVIDIA = ["nvidia-open", "libva-nvidia-driver"]
 NVIDIA_ENV = """\
-# From the Hyprland wiki's Nvidia page, for a machine whose only GPU is one.
+# For a machine whose only GPU is NVIDIA's: VA-API through
+# libva-nvidia-driver (its direct backend) and NVIDIA's GLX (ArchWiki:
+# NVIDIA, Hardware video acceleration).
 export LIBVA_DRIVER_NAME=nvidia
 export __GLX_VENDOR_LIBRARY_NAME=nvidia
 export NVD_BACKEND=direct
 """
 KBD_MODEL_MAP = Path("/usr/share/systemd/kbd-model-map")
-XKB = ("XKBLAYOUT", "XKBMODEL", "XKBVARIANT", "XKBOPTIONS")
 # The initramfs only has to find the root file system. Without kms the
 # graphics driver loads beside the rest of the system instead of before it,
 # and Btrfs needs no fsck. Unencrypted, nothing is typed there, so the
@@ -139,7 +139,7 @@ def main() -> None:
         # binding (phase 4) relies on.
         options = "discard,x-initrd.attach,tpm2-measure-pcr=yes"
         crypttab = f"{disks.ROOT_VOLUME} UUID={luks} none {options}\n"
-    _mount(esp, root)
+    disks.make_system(esp, root, SUBVOLUMES)
     _write_settings(hostname, timezone, locale, keymap, encrypt)
     if encrypt:
         _write_kernel_image_settings()
@@ -177,7 +177,6 @@ def main() -> None:
         # The image pacstrap built had no crypttab to open the root by, and
         # no keys to be signed with.
         _chroot("mkinitcpio", "--allpresets")
-        _chroot("systemctl", "enable", "systemd-boot-update.service")
     _copy_installer(user)
 
 
@@ -198,30 +197,6 @@ def _own(volume: disks.DataDisk, user: str) -> None:
     _chroot("chown", f"{user}:", volume.mount)
 
 
-def _mount(esp: str, root: str) -> None:
-    run("mkfs.fat", "-F", "32", esp)
-    run("mkfs.btrfs", "--force", root)
-    run("mount", root, disks.MNT)
-    run(
-        "btrfs",
-        "subvolume",
-        "create",
-        *(disks.MNT / name for name in SUBVOLUMES),
-    )
-    run("umount", disks.MNT)
-    for name, path in SUBVOLUMES.items():
-        options = f"compress=zstd,subvol={name}"
-        run("mount", "--mkdir", "-o", options, root, disks.MNT / path)
-    run(
-        "mount",
-        "--mkdir",
-        "-o",
-        "fmask=0077,dmask=0077",
-        esp,
-        disks.MNT / "boot",
-    )
-
-
 def _write_settings(
     hostname: str, timezone: str, locale: str, keymap: str, encrypt: bool
 ) -> None:
@@ -236,40 +211,20 @@ def _write_settings(
     (etc / "mkinitcpio.conf.d/jupiter.conf").write_text(f"HOOKS=({hooks})\n")
     (etc / "hostname").write_text(f"{hostname}\n")
     (etc / "locale.conf").write_text(f"LANG={locale}\n")
-    xkb = keyboard(keymap, KBD_MODEL_MAP.read_text())
-    lines = [f"{key}={value}\n" for key, value in xkb.items()]
+    # As localectl set-keymap writes them, beside KEYMAP.
+    xkb = questions.keyboard(keymap, KBD_MODEL_MAP.read_text())
+    lines = [f"XKB{key.upper()}={value}\n" for key, value in xkb.items()]
     (etc / "vconsole.conf").write_text("".join([f"KEYMAP={keymap}\n", *lines]))
     (etc / "systemd/zram-generator.conf").write_text("[zram0]\n")
     (etc / "localtime").symlink_to(f"/usr/share/zoneinfo/{timezone}")
-
-
-def keyboard(keymap: str, table: str) -> dict[str, str]:
-    """The X layout for a console keymap, from systemd's kbd-model-map.
-
-    localectl set-keymap writes the same beside KEYMAP; the dotfiles'
-    desktop and login screen type in it.
-    """
-    for line in table.splitlines():
-        fields = line.split()
-        if fields[:1] == [keymap]:
-            values = zip(XKB, fields[1:5], strict=False)
-            return {name: value for name, value in values if value != "-"}
-    return {}
 
 
 def drivers(root: Path = Path("/")) -> set[str]:
     """Microcode for the CPU, and the graphics drivers of every GPU."""
     cpu = (root / "proc/cpuinfo").read_text()
     found = {package for vendor, package in MICROCODE.items() if vendor in cpu}
-    for device in (root / "sys/bus/pci/devices").iterdir():
-        if not (device / "class").read_text().startswith("0x03"):
-            continue
-        vendor = (device / "vendor").read_text().strip()
-        model = int((device / "device").read_text(), 16)
-        if vendor == "0x10de" and model >= NVIDIA_TURING:
-            found.update(NVIDIA)
-        else:
-            found.update(GRAPHICS.get(vendor, []))
+    for vendor, nvidia_open in graphics_cards(root):
+        found.update(NVIDIA if nvidia_open else GRAPHICS.get(vendor, []))
     return found
 
 
@@ -302,9 +257,9 @@ def _carry_wifi() -> None:
         if not IWD_PLAIN_NAME.fullmatch(name) or not found:
             continue
         folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-        # A key file's string: a backslash escaped, a leading space kept.
-        psk = found.group(1).replace("\\", "\\\\")
-        psk = "\\s" + psk[1:] if psk.startswith(" ") else psk
+        # iwd escapes its strings as a NetworkManager keyfile does
+        # (iwd.network(5): \\, \s for a leading space): copied as it is.
+        psk = found.group(1)
         text = (
             f"[connection]\nid={name}\ntype=wifi\n\n"
             f"[wifi]\nmode=infrastructure\nssid={name}\n\n"
@@ -353,9 +308,8 @@ def _sign_boot(firmware: str) -> None:
     lets them be, and systemd-boot signed: bootctl installs the signed copy,
     and sbctl signs it again whenever systemd updates it."""
     _chroot("sbctl", "create-keys")
-    enroll: list[str | Path] = ["arch-chroot", "-S", disks.MNT]
-    enroll += ["sbctl", "enroll-keys", "--microsoft"]
-    if firmware == "setup" and not succeeds(*enroll):
+    chroot = ("arch-chroot", "-S", disks.MNT)
+    if firmware == "setup" and not secureboot.enroll(*chroot):
         warn("Could not enrol the Secure Boot keys: phase 4 says what is left")
     boot = str(secureboot.BOOT_EFI)
     signed = str(secureboot.SIGNED_BOOT_EFI)
@@ -364,8 +318,11 @@ def _sign_boot(firmware: str) -> None:
 
 def _install_boot_loader(entry: bool = True) -> None:
     """systemd-boot, with a loader entry for the kernel and its initramfs
-    unencrypted; encrypted, it finds the unified kernel image by itself."""
+    unencrypted; encrypted, it finds the unified kernel image by itself.
+    Updated in the ESP at the boot after systemd's package updates it
+    (encrypted, the copy sbctl signed then)."""
     _chroot("bootctl", "install")
+    _chroot("systemctl", "enable", "systemd-boot-update.service")
     if entry:
         path = disks.MNT / "boot/loader/entries/arch.conf"
         path.parent.mkdir(parents=True, exist_ok=True)

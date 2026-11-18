@@ -267,3 +267,21 @@ def make_data_disk(volume: DataDisk, passphrase: str) -> tuple[str, str]:
         f"/dev/mapper/{volume.name}",
     )
     return luks, filesystem
+
+
+def make_system(esp: str, root: str, subvolumes: dict[str, str]) -> str:
+    """FAT32 on the ESP, Btrfs on the root with its subvolumes (by name,
+    and where each is mounted), all mounted at /mnt, the ESP at /boot and
+    readable by root alone (bootctl warns of a world-readable random seed
+    otherwise). Returns the Btrfs's UUID."""
+    filesystem = str(uuid.uuid4())
+    run("mkfs.fat", "-F", "32", esp)
+    run("mkfs.btrfs", "--force", f"--uuid={filesystem}", root)
+    run("mount", root, MNT)
+    run("btrfs", "subvolume", "create", *(MNT / name for name in subvolumes))
+    run("umount", MNT)
+    for name, path in subvolumes.items():
+        options = f"compress=zstd,subvol={name}"
+        run("mount", "--mkdir", "-o", options, root, MNT / path)
+    run("mount", "--mkdir", "-o", "fmask=0077,dmask=0077", esp, MNT / "boot")
+    return filesystem

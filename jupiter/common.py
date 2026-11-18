@@ -5,9 +5,9 @@ from pathlib import Path
 
 INSTALLER_DIR = Path(__file__).resolve().parent.parent
 LIVE = Path("/run/archiso").is_dir()  # the Arch ISO (distro.py tells NixOS's)
+NVIDIA_VENDOR = "0x10de"  # its PCI vendor ID
 # NVIDIA's first GPU nvidia-open drives, by PCI device ID: older ones keep
-# nouveau, on Arch (jupiter/arch/phase1.py) and NixOS
-# (jupiter/nixos/phase1.py) alike.
+# nouveau.
 NVIDIA_TURING = 0x1E00
 
 
@@ -38,3 +38,18 @@ def output(*command: str | Path) -> str:
     return subprocess.run(
         command, capture_output=True, text=True, check=True
     ).stdout
+
+
+def graphics_cards(root: Path = Path("/")) -> list[tuple[str, bool]]:
+    """Each GPU's PCI vendor ID, and whether nvidia-open drives it (an
+    NVIDIA one from Turing on), for both phase 1s to choose drivers by."""
+    found = []
+    for device in sorted((root / "sys/bus/pci/devices").iterdir()):
+        if not (device / "class").read_text().startswith("0x03"):
+            continue
+        vendor = (device / "vendor").read_text().strip()
+        model = int((device / "device").read_text(), 16)
+        found.append(
+            (vendor, vendor == NVIDIA_VENDOR and model >= NVIDIA_TURING)
+        )
+    return found
