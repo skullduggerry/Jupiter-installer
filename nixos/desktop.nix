@@ -104,7 +104,8 @@ in
     adw-gtk3
 
     # Terminal shell and editor (nvim's plugins come through git, its
-    # language servers through mason, which unpacks with unzip).
+    # language servers are packages.nix's, and mason, which unpacks with
+    # unzip, adds others).
     neovim
     git
     unzip

@@ -44,6 +44,17 @@ in
     lua-language-server
     nixfmt
     actionlint
+
+    # neovim's language servers, beside ruff, shellcheck and
+    # lua-language-server above: qtdeclarative puts Qt 6's qmlls on PATH.
+    # Drop them if you do not code in nvim.
+    kdePackages.qtdeclarative
+    pyright
+    bash-language-server
+    vscode-langservers-extracted
+    yaml-language-server
+    taplo
+    nil
   ];
 
   virtualisation.docker.enable = true;

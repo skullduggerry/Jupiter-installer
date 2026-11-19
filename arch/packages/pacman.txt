@@ -45,6 +45,16 @@ shellcheck
 shfmt
 stylua
 lua-language-server
+# neovim's language servers, beside ruff, shellcheck and lua-language-server
+# above: QML's is Qt 6's qmlls, which quickshell brings. Drop them if you do
+# not code in nvim.
+pyright
+bash-language-server
+vscode-json-languageserver
+vscode-css-languageserver
+yaml-language-server
+taplo-cli
+nil
 # What Jupiter-testing's scripts/vm.sh installs Jupiter in: a VM with Secure
 # Boot firmware and a TPM. Its suite is skipped where they are missing.
 qemu-system-x86
