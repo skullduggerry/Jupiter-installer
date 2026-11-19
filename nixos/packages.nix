@@ -54,7 +54,7 @@ in
     vscode-langservers-extracted
     yaml-language-server
     taplo
-    nil
+    nixd
   ];
 
   virtualisation.docker.enable = true;
